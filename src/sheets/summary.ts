@@ -9,9 +9,8 @@ function sheetDateToDate(value: string | number): Date {
   return new Date(value)
 }
 
-async function getInitialBalance(): Promise<number> {
+async function getInitialBalance(spreadsheetId = getSpreadsheetId()): Promise<number> {
   const sheets = getSheetsClient()
-  const spreadsheetId = getSpreadsheetId()
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: 'Pengaturan!B4',
@@ -21,9 +20,8 @@ async function getInitialBalance(): Promise<number> {
 }
 
 // Reads all transactions from columns B (date), C (tipe), D (kategori), F (nominal)
-async function getAllTransactions(): Promise<{ tanggal: string | number; tipe: string; kategori: string; nominal: number }[]> {
+async function getAllTransactions(spreadsheetId = getSpreadsheetId()): Promise<{ tanggal: string | number; tipe: string; kategori: string; nominal: number }[]> {
   const sheets = getSheetsClient()
-  const spreadsheetId = getSpreadsheetId()
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -43,20 +41,23 @@ async function getAllTransactions(): Promise<{ tanggal: string | number; tipe: s
   return result
 }
 
-export async function getCurrentSaldo(): Promise<number> {
-  const [initialBalance, txs] = await Promise.all([getInitialBalance(), getAllTransactions()])
+export async function getCurrentSaldo(spreadsheetId = getSpreadsheetId()): Promise<number> {
+  const [initialBalance, txs] = await Promise.all([
+    getInitialBalance(spreadsheetId),
+    getAllTransactions(spreadsheetId),
+  ])
 
   return txs.reduce((saldo, tx) => {
     return tx.tipe === 'Pemasukan' ? saldo + tx.nominal : saldo - tx.nominal
   }, initialBalance)
 }
 
-export async function getMonthlySummary(date?: Date): Promise<MonthlySummary> {
+export async function getMonthlySummary(date?: Date, spreadsheetId = getSpreadsheetId()): Promise<MonthlySummary> {
   const ref = date || new Date()
   const year = ref.getFullYear()
   const month = ref.getMonth() + 1
 
-  const txs = await getAllTransactions()
+  const txs = await getAllTransactions(spreadsheetId)
 
   let totalMasuk = 0
   let totalKeluar = 0
@@ -74,8 +75,8 @@ export async function getMonthlySummary(date?: Date): Promise<MonthlySummary> {
   return { totalMasuk, totalKeluar, net, savingsRate }
 }
 
-export async function getWeeklySummary(): Promise<MonthlySummary> {
-  const txs = await getAllTransactions()
+export async function getWeeklySummary(spreadsheetId = getSpreadsheetId()): Promise<MonthlySummary> {
+  const txs = await getAllTransactions(spreadsheetId)
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
 
   let totalMasuk = 0
@@ -93,12 +94,12 @@ export async function getWeeklySummary(): Promise<MonthlySummary> {
   return { totalMasuk, totalKeluar, net, savingsRate }
 }
 
-export async function getCategorySummary(date?: Date): Promise<CategorySummary[]> {
+export async function getCategorySummary(date?: Date, spreadsheetId = getSpreadsheetId()): Promise<CategorySummary[]> {
   const ref = date || new Date()
   const year = ref.getFullYear()
   const month = ref.getMonth() + 1
 
-  const txs = await getAllTransactions()
+  const txs = await getAllTransactions(spreadsheetId)
   const totals: Record<string, number> = {}
 
   for (const tx of txs) {

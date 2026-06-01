@@ -2,6 +2,7 @@ import fs from 'fs'
 import { parseMessage } from '../parser/regex'
 import { parseWithAI } from '../parser/ai'
 import { appendTransaction } from '../sheets/append'
+import { getOrCreateUserSpreadsheet } from '../sheets/userRegistry'
 import { handleCommand } from './commands'
 import { invoiceHelp, parseAndGenerateInvoice } from '../invoice/wizard'
 import { Transaction } from '../types'
@@ -23,6 +24,30 @@ function buildTransaction(
     deskripsi: parsed.deskripsi, nominal: parsed.nominal,
     source: 'WhatsApp',
   }
+}
+
+function withSpreadsheetNotice(reply: string, created: boolean, spreadsheetUrl: string): string {
+  if (!created) return reply
+  return [
+    reply,
+    '',
+    `📊 Spreadsheet cashflow kamu dibuat: ${spreadsheetUrl}`,
+  ].join('\n')
+}
+
+function commandNeedsSpreadsheet(cmd: string): boolean {
+  return [
+    '/saldo',
+    '/laporan',
+    '/laporan bulan ini',
+    '/laporan minggu ini',
+    '/minggu',
+    '/laporan bulan lalu',
+    '/kategori',
+    '/kat',
+    '/hapus',
+    '/undo',
+  ].includes(cmd)
 }
 
 export type HandlerResult = {
@@ -57,8 +82,19 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
       return { text: reply }
     }
 
-    const reply = await handleCommand(trimmed)
-    if (reply) return { text: reply }
+    if (!commandNeedsSpreadsheet(firstLine)) {
+      const reply = await handleCommand(trimmed)
+      if (reply) return { text: reply }
+      return { text: `❓ Perintah tidak dikenal. Ketik /help untuk daftar perintah.` }
+    }
+
+    const sheet = await getOrCreateUserSpreadsheet(jid)
+    const reply = await handleCommand(trimmed, sheet.record.spreadsheetId)
+    if (reply) {
+      return {
+        text: withSpreadsheetNotice(reply, sheet.created, sheet.record.spreadsheetUrl),
+      }
+    }
     return { text: `❓ Perintah tidak dikenal. Ketik /help untuk daftar perintah.` }
   }
 
@@ -75,7 +111,8 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
   }
 
   const tx = buildTransaction(result.transaction)
-  await appendTransaction(tx)
+  const sheet = await getOrCreateUserSpreadsheet(jid)
+  await appendTransaction(tx, sheet.record.spreadsheetId)
 
   const emoji = tx.tipe === 'Pemasukan' ? '✅' : '💸'
   const label = tx.tipe === 'Pemasukan' ? 'Pemasukan' : 'Pengeluaran'
@@ -86,6 +123,7 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
       `💰 ${formatRp(tx.nominal)}`,
       `🏷️ ${tx.kategori}`,
       `📝 ${tx.deskripsi}`,
+      ...(sheet.created ? ['', `📊 Spreadsheet cashflow kamu dibuat: ${sheet.record.spreadsheetUrl}`] : []),
     ].join('\n'),
   }
 }

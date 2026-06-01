@@ -16,12 +16,12 @@ function formatSummary(label: string, s: Awaited<ReturnType<typeof getMonthlySum
   ].join('\n')
 }
 
-export async function handleCommand(text: string): Promise<string | null> {
+export async function handleCommand(text: string, spreadsheetId?: string): Promise<string | null> {
   const cmd = text.trim().toLowerCase()
 
   // /saldo
   if (cmd === '/saldo') {
-    const saldo = await getCurrentSaldo()
+    const saldo = await getCurrentSaldo(spreadsheetId)
     const sign = saldo >= 0 ? '💚' : '🔴'
     return `${sign} *Saldo Saat Ini*\n${formatRp(saldo)}`
   }
@@ -30,13 +30,13 @@ export async function handleCommand(text: string): Promise<string | null> {
   if (cmd === '/laporan' || cmd === '/laporan bulan ini') {
     const now = new Date()
     const label = now.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
-    const summary = await getMonthlySummary()
+    const summary = await getMonthlySummary(undefined, spreadsheetId)
     return formatSummary(label, summary)
   }
 
   // /laporan minggu ini
   if (cmd === '/laporan minggu ini' || cmd === '/minggu') {
-    const summary = await getWeeklySummary()
+    const summary = await getWeeklySummary(spreadsheetId)
     return formatSummary('7 Hari Terakhir', summary)
   }
 
@@ -45,13 +45,13 @@ export async function handleCommand(text: string): Promise<string | null> {
     const now = new Date()
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const label = lastMonth.toLocaleString('id-ID', { month: 'long', year: 'numeric' })
-    const summary = await getMonthlySummary(lastMonth)
+    const summary = await getMonthlySummary(lastMonth, spreadsheetId)
     return formatSummary(label, summary)
   }
 
   // /kategori
   if (cmd === '/kategori' || cmd === '/kat') {
-    const cats = await getCategorySummary()
+    const cats = await getCategorySummary(undefined, spreadsheetId)
     if (cats.length === 0) return '📭 Belum ada pengeluaran bulan ini.'
 
     const now = new Date()
@@ -62,7 +62,7 @@ export async function handleCommand(text: string): Promise<string | null> {
 
   // /hapus atau /undo
   if (cmd === '/hapus' || cmd === '/undo') {
-    const deleted = await deleteLastTransaction()
+    const deleted = await deleteLastTransaction(spreadsheetId)
     if (!deleted) return '⚠️ Tidak ada transaksi yang bisa dihapus.'
     return '🗑️ Transaksi terakhir berhasil dihapus.'
   }

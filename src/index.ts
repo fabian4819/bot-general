@@ -48,6 +48,19 @@ function getMessageTimestampSeconds(msg: proto.IWebMessageInfo): number | null {
   return Number.isFinite(value) ? value : null
 }
 
+function getPhoneJidFromMessage(msg: proto.IWebMessageInfo): string | null {
+  const key = msg.key as typeof msg.key & {
+    senderPn?: string
+    participantPn?: string
+  }
+  return key.senderPn || key.participantPn || null
+}
+
+function getPhoneNumberFromJid(jid: string): string | null {
+  if (!jid.endsWith('@s.whatsapp.net')) return null
+  return jid.split('@')[0]
+}
+
 async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH)
   const { version } = await fetchLatestBaileysVersion()
@@ -92,7 +105,8 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
 
     if (connection === 'open') {
       console.log(`✅ WhatsApp terhubung sebagai ${OWNER_PHONE}`)
-      console.log(`📊 Spreadsheet: https://docs.google.com/spreadsheets/d/${process.env.SPREADSHEET_ID}`)
+      console.log(`📊 Default spreadsheet: https://docs.google.com/spreadsheets/d/${process.env.SPREADSHEET_ID}`)
+      console.log(`👥 Allowed phones: ${Array.from(ALLOWED_PHONES).join(', ')}`)
 
       // Start scheduled reports, send to owner's self-chat
       startScheduler(async (text) => {
@@ -128,13 +142,15 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       // Skip group chats
       if (remoteJid.endsWith('@g.us')) continue
 
+      const identityJid = getPhoneJidFromMessage(msg) || remoteJid
+      const phoneNumber = getPhoneNumberFromJid(identityJid)
+
       // Only respond to allowed numbers
-      // @lid = WhatsApp privacy format, phone number can't be extracted directly — allow through
-      // @s.whatsapp.net = standard format, filter by phone number
-      if (remoteJid.endsWith('@s.whatsapp.net')) {
-        const phoneNumber = remoteJid.split('@')[0]
+      // @lid is WhatsApp's privacy format. If Baileys exposes senderPn/participantPn,
+      // use that real phone JID for filtering and per-user spreadsheet selection.
+      if (phoneNumber) {
         if (!ALLOWED_PHONES.has(phoneNumber)) {
-          console.log(`[Filter] blocked jid=${remoteJid}`)
+          console.log(`[Filter] blocked jid=${remoteJid} identity=${identityJid}`)
           continue
         }
       }
@@ -142,10 +158,10 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       const text = getMessageText(msg)
       if (!text) continue
 
-      console.log(`[Bot] from=${remoteJid} text="${text}"`)
+      console.log(`[Bot] from=${remoteJid} identity=${identityJid} text="${text}"`)
 
       try {
-        const result = await handleMessage(text, remoteJid)
+        const result = await handleMessage(text, identityJid)
         if (!result.text && !result.document) continue
         if (result.document) {
           await sock.sendMessage(remoteJid, {

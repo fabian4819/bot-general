@@ -1,0 +1,140 @@
+import fs from 'fs/promises'
+import path from 'path'
+import { getDriveClient, getSheetsClient, getSpreadsheetId } from './client'
+import { ensureSpreadsheetTemplate } from './setup'
+
+type UserSpreadsheetRecord = {
+  key: string
+  phone?: string
+  jid: string
+  spreadsheetId: string
+  spreadsheetUrl: string
+  createdAt: string
+}
+
+type Registry = {
+  users: Record<string, UserSpreadsheetRecord>
+}
+
+const DATA_DIR = path.join(process.cwd(), 'data')
+const REGISTRY_FILE = path.join(DATA_DIR, 'user-spreadsheets.json')
+
+function extractPhone(jid: string): string | undefined {
+  if (!jid.endsWith('@s.whatsapp.net')) return undefined
+  return jid.split('@')[0]
+}
+
+function getUserKey(jid: string): { key: string; phone?: string } {
+  const phone = extractPhone(jid)
+  if (phone) return { key: phone, phone }
+  return { key: jid.replace(/[^a-zA-Z0-9_.-]/g, '_') }
+}
+
+async function readRegistry(): Promise<Registry> {
+  try {
+    const raw = await fs.readFile(REGISTRY_FILE, 'utf-8')
+    return JSON.parse(raw) as Registry
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') throw err
+    return { users: {} }
+  }
+}
+
+async function writeRegistry(registry: Registry): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true })
+  await fs.writeFile(REGISTRY_FILE, JSON.stringify(registry, null, 2))
+}
+
+async function shareSpreadsheet(spreadsheetId: string): Promise<void> {
+  const drive = getDriveClient()
+  await drive.permissions.create({
+    fileId: spreadsheetId,
+    requestBody: {
+      type: 'anyone',
+      role: 'writer',
+    },
+    fields: 'id',
+  })
+}
+
+async function createSpreadsheet(label: string, waLabel: string): Promise<UserSpreadsheetRecord> {
+  const sheets = getSheetsClient()
+  const res = await sheets.spreadsheets.create({
+    requestBody: {
+      properties: {
+        title: `Cashflow - ${label}`,
+        locale: 'en_US',
+      },
+    },
+    fields: 'spreadsheetId,spreadsheetUrl',
+  })
+
+  const spreadsheetId = res.data.spreadsheetId
+  if (!spreadsheetId) throw new Error('Gagal membuat spreadsheet baru')
+
+  await ensureSpreadsheetTemplate(spreadsheetId)
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Pengaturan!B3',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[waLabel]] },
+  })
+
+  try {
+    await shareSpreadsheet(spreadsheetId)
+  } catch (err) {
+    console.warn('[Sheets] Gagal share spreadsheet otomatis:', (err as Error).message)
+  }
+
+  return {
+    key: label,
+    phone: waLabel.match(/^\d+$/) ? waLabel : undefined,
+    jid: waLabel,
+    spreadsheetId,
+    spreadsheetUrl: res.data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+export async function getOrCreateUserSpreadsheet(jid: string): Promise<{
+  record: UserSpreadsheetRecord
+  created: boolean
+}> {
+  const registry = await readRegistry()
+  const { key, phone } = getUserKey(jid)
+  const existing = registry.users[key]
+  if (existing) return { record: existing, created: false }
+
+  const ownerPhone = process.env.OWNER_PHONE
+  const defaultSpreadsheetId = process.env.SPREADSHEET_ID
+
+  if (phone && ownerPhone && defaultSpreadsheetId && phone === ownerPhone) {
+    const sheets = getSheetsClient()
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: defaultSpreadsheetId,
+      range: 'Pengaturan!B3',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[phone]] },
+    })
+
+    const record: UserSpreadsheetRecord = {
+      key,
+      phone,
+      jid,
+      spreadsheetId: getSpreadsheetId(),
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${defaultSpreadsheetId}`,
+      createdAt: new Date().toISOString(),
+    }
+    registry.users[key] = record
+    await writeRegistry(registry)
+    return { record, created: false }
+  }
+
+  const label = phone || key.slice(0, 32)
+  const record = await createSpreadsheet(label, phone || jid)
+  registry.users[key] = { ...record, key, phone, jid }
+  await writeRegistry(registry)
+  return { record: registry.users[key], created: true }
+}

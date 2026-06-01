@@ -1,9 +1,11 @@
 import { google } from 'googleapis'
-import { sheets_v4 } from 'googleapis'
+import { drive_v3, sheets_v4 } from 'googleapis'
 import fs from 'fs'
 import path from 'path'
 
 let _sheets: sheets_v4.Sheets | null = null
+let _drive: drive_v3.Drive | null = null
+let _auth: ReturnType<typeof loadAuth> | null = null
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -32,10 +34,22 @@ function loadAuth() {
   })
 }
 
+function getAuth() {
+  if (_auth) return _auth
+  _auth = loadAuth()
+  return _auth
+}
+
 export function getSheetsClient(): sheets_v4.Sheets {
   if (_sheets) return _sheets
-  _sheets = google.sheets({ version: 'v4', auth: loadAuth() })
+  _sheets = google.sheets({ version: 'v4', auth: getAuth() })
   return _sheets
+}
+
+export function getDriveClient(): drive_v3.Drive {
+  if (_drive) return _drive
+  _drive = google.drive({ version: 'v3', auth: getAuth() })
+  return _drive
 }
 
 export function getSpreadsheetId(): string {

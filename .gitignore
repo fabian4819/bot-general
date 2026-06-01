@@ -15,6 +15,7 @@ auth_info_baileys.backup/
 
 # Generated invoice/runtime files
 invoices/
+data/
 *.log
 
 # Local/debug artifacts

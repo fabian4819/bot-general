@@ -7,7 +7,7 @@ NODE_BIN="$(command -v node)"
 NPM_BIN="$(command -v npm)"
 
 cd "$APP_DIR"
-mkdir -p invoices auth_info_baileys credentials
+mkdir -p invoices auth_info_baileys credentials data
 
 npm ci --omit=dev
 

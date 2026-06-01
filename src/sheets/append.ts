@@ -2,12 +2,11 @@ import { getSheetsClient, getSpreadsheetId } from './client'
 import { getCurrentSaldo } from './summary'
 import { Transaction } from '../types'
 
-export async function appendTransaction(tx: Transaction): Promise<void> {
+export async function appendTransaction(tx: Transaction, spreadsheetId = getSpreadsheetId()): Promise<void> {
   const sheets = getSheetsClient()
-  const spreadsheetId = getSpreadsheetId()
 
   // Calculate running balance before appending
-  const currentSaldo = await getCurrentSaldo()
+  const currentSaldo = await getCurrentSaldo(spreadsheetId)
   const newSaldo = tx.tipe === 'Pemasukan'
     ? currentSaldo + tx.nominal
     : currentSaldo - tx.nominal
@@ -32,9 +31,8 @@ export async function appendTransaction(tx: Transaction): Promise<void> {
   })
 }
 
-export async function deleteLastTransaction(): Promise<boolean> {
+export async function deleteLastTransaction(spreadsheetId = getSpreadsheetId()): Promise<boolean> {
   const sheets = getSheetsClient()
-  const spreadsheetId = getSpreadsheetId()
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
