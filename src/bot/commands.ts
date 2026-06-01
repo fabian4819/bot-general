@@ -9,6 +9,10 @@ function formatSignedRp(amount: number): string {
   return `${amount < 0 ? '-' : ''}${formatRp(amount)}`
 }
 
+function spreadsheetUrl(spreadsheetId?: string): string | null {
+  return spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : null
+}
+
 function parseAmount(text: string): number | null {
   const normalized = text.toLowerCase().replace(/rp/g, '').trim()
   const negative = /\b(minus|negatif)\b|^-/.test(normalized)
@@ -126,6 +130,9 @@ export async function handleCommand(text: string, spreadsheetId?: string): Promi
       '🤖 *Connexa Bot — Help*',
       '',
       '💰 *Cashflow*',
+      ...(spreadsheetUrl(spreadsheetId)
+        ? [`Laporan sheet: ${spreadsheetUrl(spreadsheetId)}`, '']
+        : []),
       'Mulai dari set saldo awal:',
       '  /set saldo 1000000',
       '  /set saldo 1jt',

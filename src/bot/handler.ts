@@ -58,6 +58,8 @@ function commandNeedsSpreadsheet(cmd: string): boolean {
     '/kat',
     '/hapus',
     '/undo',
+    '/help',
+    '/bantuan',
   ].some(command => cmd === command || cmd.startsWith(`${command} `))
 }
 
