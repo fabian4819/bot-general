@@ -17,20 +17,18 @@ function parseAmount(text: string): number | null {
   const normalized = text.toLowerCase().replace(/rp/g, '').trim()
   const negative = /\b(minus|negatif)\b|^-/.test(normalized)
   const patterns = [
-    { re: /(\d+)[.,](\d+)\s*(jt|juta|j)\b/, multiplier: 1_000_000 },
-    { re: /(\d+)\s*(jt|juta|j)\b/, multiplier: 1_000_000 },
-    { re: /(\d+)[.,](\d+)\s*(rb|ribu|rbu|k)\b/, multiplier: 1_000 },
-    { re: /(\d+)\s*(rb|ribu|rbu|k)\b/, multiplier: 1_000 },
-    { re: /(\d{1,3}(?:[.,]\d{3})+)(?![.,]\d)/, multiplier: 1 },
-    { re: /\b(\d+)\b/, multiplier: 1 },
+    { re: /(\d+)[.,](\d+)\s*(jt|juta|j)\b/, parse: (m: RegExpMatchArray) => (parseInt(m[1]) + parseInt(m[2]) / Math.pow(10, m[2].length)) * 1_000_000 },
+    { re: /(\d+)\s*(jt|juta|j)\b/, parse: (m: RegExpMatchArray) => parseInt(m[1]) * 1_000_000 },
+    { re: /(\d+)[.,](\d+)\s*(rb|ribu|rbu|k)\b/, parse: (m: RegExpMatchArray) => (parseInt(m[1]) + parseInt(m[2]) / Math.pow(10, m[2].length)) * 1_000 },
+    { re: /(\d+)\s*(rb|ribu|rbu|k)\b/, parse: (m: RegExpMatchArray) => parseInt(m[1]) * 1_000 },
+    { re: /(\d{1,3}(?:[.,]\d{3})+)(?![.,]\d)/, parse: (m: RegExpMatchArray) => parseInt(m[1].replace(/[.,]/g, '')) },
+    { re: /\b(\d+)\b/, parse: (m: RegExpMatchArray) => parseInt(m[1]) },
   ]
 
-  for (const { re, multiplier } of patterns) {
+  for (const { re, parse } of patterns) {
     const match = normalized.match(re)
     if (!match) continue
-    const whole = parseInt(match[1].replace(/[.,]/g, ''))
-    const decimal = match[2] ? parseInt(match[2]) / Math.pow(10, match[2].length) : 0
-    const amount = (whole + decimal) * multiplier
+    const amount = parse(match)
     if (Number.isFinite(amount)) return negative ? -Math.round(amount) : Math.round(amount)
   }
 
