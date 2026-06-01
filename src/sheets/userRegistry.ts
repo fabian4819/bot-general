@@ -10,6 +10,7 @@ type UserSpreadsheetRecord = {
   spreadsheetId: string
   spreadsheetUrl: string
   createdAt: string
+  fallback?: boolean
 }
 
 type Registry = {
@@ -98,14 +99,38 @@ async function createSpreadsheet(label: string, waLabel: string): Promise<UserSp
   }
 }
 
+async function useDefaultSpreadsheet(key: string, phone: string | undefined, jid: string): Promise<UserSpreadsheetRecord> {
+  const spreadsheetId = getSpreadsheetId()
+  const sheets = getSheetsClient()
+  const waLabel = phone || jid
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Pengaturan!B3',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[waLabel]] },
+  })
+
+  return {
+    key,
+    phone,
+    jid,
+    spreadsheetId,
+    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+    createdAt: new Date().toISOString(),
+    fallback: true,
+  }
+}
+
 export async function getOrCreateUserSpreadsheet(jid: string): Promise<{
   record: UserSpreadsheetRecord
   created: boolean
+  fallback: boolean
 }> {
   const registry = await readRegistry()
   const { key, phone } = getUserKey(jid)
   const existing = registry.users[key]
-  if (existing) return { record: existing, created: false }
+  if (existing) return { record: existing, created: false, fallback: Boolean(existing.fallback) }
 
   const ownerPhone = process.env.OWNER_PHONE
   const defaultSpreadsheetId = process.env.SPREADSHEET_ID
@@ -129,12 +154,25 @@ export async function getOrCreateUserSpreadsheet(jid: string): Promise<{
     }
     registry.users[key] = record
     await writeRegistry(registry)
-    return { record, created: false }
+    return { record, created: false, fallback: false }
   }
 
   const label = phone || key.slice(0, 32)
-  const record = await createSpreadsheet(label, phone || jid)
+  let record: UserSpreadsheetRecord
+  let fallback = false
+
+  try {
+    record = await createSpreadsheet(label, phone || jid)
+  } catch (err) {
+    fallback = true
+    console.warn(
+      '[Sheets] Gagal membuat spreadsheet baru, pakai default spreadsheet sementara:',
+      (err as Error).message
+    )
+    record = await useDefaultSpreadsheet(key, phone, jid)
+  }
+
   registry.users[key] = { ...record, key, phone, jid }
   await writeRegistry(registry)
-  return { record: registry.users[key], created: true }
+  return { record: registry.users[key], created: !fallback, fallback }
 }

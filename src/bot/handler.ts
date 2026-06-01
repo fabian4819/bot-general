@@ -26,8 +26,16 @@ function buildTransaction(
   }
 }
 
-function withSpreadsheetNotice(reply: string, created: boolean, spreadsheetUrl: string): string {
-  if (!created) return reply
+function withSpreadsheetNotice(reply: string, created: boolean, fallback: boolean, spreadsheetUrl: string): string {
+  if (!created && !fallback) return reply
+  if (fallback) {
+    return [
+      reply,
+      '',
+      `⚠️ Spreadsheet pribadi belum bisa dibuat otomatis, sementara dicatat ke spreadsheet default: ${spreadsheetUrl}`,
+    ].join('\n')
+  }
+
   return [
     reply,
     '',
@@ -92,7 +100,7 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
     const reply = await handleCommand(trimmed, sheet.record.spreadsheetId)
     if (reply) {
       return {
-        text: withSpreadsheetNotice(reply, sheet.created, sheet.record.spreadsheetUrl),
+        text: withSpreadsheetNotice(reply, sheet.created, sheet.fallback, sheet.record.spreadsheetUrl),
       }
     }
     return { text: `❓ Perintah tidak dikenal. Ketik /help untuk daftar perintah.` }
@@ -124,6 +132,7 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
       `🏷️ ${tx.kategori}`,
       `📝 ${tx.deskripsi}`,
       ...(sheet.created ? ['', `📊 Spreadsheet cashflow kamu dibuat: ${sheet.record.spreadsheetUrl}`] : []),
+      ...(sheet.fallback ? ['', `⚠️ Spreadsheet pribadi belum bisa dibuat otomatis, sementara dicatat ke spreadsheet default: ${sheet.record.spreadsheetUrl}`] : []),
     ].join('\n'),
   }
 }
