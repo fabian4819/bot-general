@@ -20,6 +20,7 @@ function addDays(date: Date, days: number): Date {
 
 function parseRateInput(text: string): number | null {
   const lower = text.toLowerCase().replace(/[,\s]/g, '')
+  if (lower === '0' || lower === 'free' || lower === 'gratis') return 0
   const jt = lower.match(/^(\d+(?:\.\d+)?)(jt|juta)$/)
   if (jt) return Math.round(parseFloat(jt[1]) * 1_000_000)
   const rb = lower.match(/^(\d+(?:\.\d+)?)(rb|ribu|k)$/)
@@ -87,8 +88,8 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
     if (isNaN(qty) || qty <= 0) {
       return { reply: `❌ Qty tidak valid: "${qtyStr}"` }
     }
-    if (!rate) {
-      return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt` }
+    if (rate === null) {
+      return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
     }
     items.push({ name, description, qty, rate })
   }
