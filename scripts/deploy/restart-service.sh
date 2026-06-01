@@ -9,8 +9,12 @@ NPM_BIN="$(command -v npm)"
 cd "$APP_DIR"
 mkdir -p invoices auth_info_baileys credentials
 
-npm ci
-npm run build
+npm ci --omit=dev
+
+if [ ! -f "$APP_DIR/dist/index.js" ]; then
+  echo "dist/index.js not found. Build the app before deploying to this VPS."
+  exit 1
+fi
 
 sudo tee "/etc/systemd/system/${SERVICE_NAME}.service" >/dev/null <<SERVICE
 [Unit]

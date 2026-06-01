@@ -56,7 +56,6 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -p ${VPS_PORT:-22}" \
             --exclude '.git/' \
             --exclude 'node_modules/' \
-            --exclude 'dist/' \
             --exclude '.env' \
             --exclude 'credentials/' \
             --exclude 'auth_info_baileys/' \
