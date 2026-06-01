@@ -115,7 +115,27 @@ async function main() {
   })
   console.log('✅ Formatting selesai')
 
-  // 5. Add charts
+  // 6. Replace existing charts so repeated setup stays clean/idempotent
+  const chartMeta = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets(charts(chartId))',
+  })
+  const chartIds = (chartMeta.data.sheets || [])
+    .flatMap(sheet => sheet.charts || [])
+    .map(chart => chart.chartId)
+    .filter((id): id is number => typeof id === 'number')
+
+  if (chartIds.length > 0) {
+    console.log(`🧹 Menghapus ${chartIds.length} chart lama...`)
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: chartIds.map(objectId => ({ deleteEmbeddedObject: { objectId } })),
+      },
+    })
+  }
+
+  // 7. Add charts
   console.log('📈 Menambahkan charts...')
   try {
     await sheets.spreadsheets.batchUpdate({
