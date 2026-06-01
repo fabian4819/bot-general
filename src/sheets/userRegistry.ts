@@ -11,6 +11,7 @@ type UserSpreadsheetRecord = {
   spreadsheetUrl: string
   createdAt: string
   fallback?: boolean
+  manual?: boolean
 }
 
 type Registry = {
@@ -29,6 +30,20 @@ function getUserKey(jid: string): { key: string; phone?: string } {
   const phone = extractPhone(jid)
   if (phone) return { key: phone, phone }
   return { key: jid.replace(/[^a-zA-Z0-9_.-]/g, '_') }
+}
+
+function spreadsheetUrl(spreadsheetId: string): string {
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
+}
+
+function getManualSpreadsheetId(phone?: string): string | null {
+  if (!phone) return null
+  const raw = process.env.USER_SPREADSHEETS || ''
+  for (const item of raw.split(',')) {
+    const [mappedPhone, spreadsheetId] = item.split(':').map(part => part.trim())
+    if (mappedPhone === phone && spreadsheetId) return spreadsheetId
+  }
+  return null
 }
 
 async function readRegistry(): Promise<Registry> {
@@ -94,8 +109,35 @@ async function createSpreadsheet(label: string, waLabel: string): Promise<UserSp
     phone: waLabel.match(/^\d+$/) ? waLabel : undefined,
     jid: waLabel,
     spreadsheetId,
-    spreadsheetUrl: res.data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+    spreadsheetUrl: res.data.spreadsheetUrl || spreadsheetUrl(spreadsheetId),
     createdAt: new Date().toISOString(),
+  }
+}
+
+async function useManualSpreadsheet(
+  key: string,
+  phone: string,
+  jid: string,
+  spreadsheetId: string,
+): Promise<UserSpreadsheetRecord> {
+  const sheets = getSheetsClient()
+
+  await ensureSpreadsheetTemplate(spreadsheetId)
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Pengaturan!B3',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[phone]] },
+  })
+
+  return {
+    key,
+    phone,
+    jid,
+    spreadsheetId,
+    spreadsheetUrl: spreadsheetUrl(spreadsheetId),
+    createdAt: new Date().toISOString(),
+    manual: true,
   }
 }
 
@@ -116,7 +158,7 @@ async function useDefaultSpreadsheet(key: string, phone: string | undefined, jid
     phone,
     jid,
     spreadsheetId,
-    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+    spreadsheetUrl: spreadsheetUrl(spreadsheetId),
     createdAt: new Date().toISOString(),
     fallback: true,
   }
@@ -129,6 +171,20 @@ export async function getOrCreateUserSpreadsheet(jid: string): Promise<{
 }> {
   const registry = await readRegistry()
   const { key, phone } = getUserKey(jid)
+  const manualSpreadsheetId = getManualSpreadsheetId(phone)
+
+  if (phone && manualSpreadsheetId) {
+    const existing = registry.users[key]
+    if (existing?.spreadsheetId === manualSpreadsheetId && !existing.fallback) {
+      return { record: existing, created: false, fallback: false }
+    }
+
+    const record = await useManualSpreadsheet(key, phone, jid, manualSpreadsheetId)
+    registry.users[key] = record
+    await writeRegistry(registry)
+    return { record, created: false, fallback: false }
+  }
+
   const existing = registry.users[key]
   if (existing) return { record: existing, created: false, fallback: Boolean(existing.fallback) }
 
@@ -149,7 +205,7 @@ export async function getOrCreateUserSpreadsheet(jid: string): Promise<{
       phone,
       jid,
       spreadsheetId: getSpreadsheetId(),
-      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${defaultSpreadsheetId}`,
+      spreadsheetUrl: spreadsheetUrl(defaultSpreadsheetId),
       createdAt: new Date().toISOString(),
     }
     registry.users[key] = record
