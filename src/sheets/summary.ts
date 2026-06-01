@@ -19,6 +19,16 @@ async function getInitialBalance(spreadsheetId = getSpreadsheetId()): Promise<nu
   return Number(res.data.values?.[0]?.[0] || 0)
 }
 
+export async function setInitialBalance(amount: number, spreadsheetId = getSpreadsheetId()): Promise<void> {
+  const sheets = getSheetsClient()
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: 'Pengaturan!B4',
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: [[amount]] },
+  })
+}
+
 // Reads all transactions from columns B (date), C (tipe), D (kategori), F (nominal)
 async function getAllTransactions(spreadsheetId = getSpreadsheetId()): Promise<{ tanggal: string | number; tipe: string; kategori: string; nominal: number }[]> {
   const sheets = getSheetsClient()

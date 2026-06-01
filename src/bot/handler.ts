@@ -46,6 +46,9 @@ function withSpreadsheetNotice(reply: string, created: boolean, fallback: boolea
 function commandNeedsSpreadsheet(cmd: string): boolean {
   return [
     '/saldo',
+    '/set saldo',
+    '/setsaldo',
+    '/saldo awal',
     '/laporan',
     '/laporan bulan ini',
     '/laporan minggu ini',
@@ -55,7 +58,7 @@ function commandNeedsSpreadsheet(cmd: string): boolean {
     '/kat',
     '/hapus',
     '/undo',
-  ].includes(cmd)
+  ].some(command => cmd === command || cmd.startsWith(`${command} `))
 }
 
 export type HandlerResult = {

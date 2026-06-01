@@ -1,8 +1,36 @@
-import { getCurrentSaldo, getMonthlySummary, getWeeklySummary, getCategorySummary } from '../sheets/summary'
+import { getCurrentSaldo, getMonthlySummary, getWeeklySummary, getCategorySummary, setInitialBalance } from '../sheets/summary'
 import { deleteLastTransaction } from '../sheets/append'
 
 function formatRp(amount: number): string {
   return `Rp ${Math.abs(amount).toLocaleString('id-ID')}`
+}
+
+function formatSignedRp(amount: number): string {
+  return `${amount < 0 ? '-' : ''}${formatRp(amount)}`
+}
+
+function parseAmount(text: string): number | null {
+  const normalized = text.toLowerCase().replace(/rp/g, '').trim()
+  const negative = /\b(minus|negatif)\b|^-/.test(normalized)
+  const patterns = [
+    { re: /(\d+)[.,](\d+)\s*(jt|juta|j)\b/, multiplier: 1_000_000 },
+    { re: /(\d+)\s*(jt|juta|j)\b/, multiplier: 1_000_000 },
+    { re: /(\d+)[.,](\d+)\s*(rb|ribu|rbu|k)\b/, multiplier: 1_000 },
+    { re: /(\d+)\s*(rb|ribu|rbu|k)\b/, multiplier: 1_000 },
+    { re: /(\d{1,3}(?:[.,]\d{3})+)(?![.,]\d)/, multiplier: 1 },
+    { re: /\b(\d+)\b/, multiplier: 1 },
+  ]
+
+  for (const { re, multiplier } of patterns) {
+    const match = normalized.match(re)
+    if (!match) continue
+    const whole = parseInt(match[1].replace(/[.,]/g, ''))
+    const decimal = match[2] ? parseInt(match[2]) / Math.pow(10, match[2].length) : 0
+    const amount = (whole + decimal) * multiplier
+    if (Number.isFinite(amount)) return negative ? -Math.round(amount) : Math.round(amount)
+  }
+
+  return null
 }
 
 function formatSummary(label: string, s: Awaited<ReturnType<typeof getMonthlySummary>>): string {
@@ -23,7 +51,32 @@ export async function handleCommand(text: string, spreadsheetId?: string): Promi
   if (cmd === '/saldo') {
     const saldo = await getCurrentSaldo(spreadsheetId)
     const sign = saldo >= 0 ? '💚' : '🔴'
-    return `${sign} *Saldo Saat Ini*\n${formatRp(saldo)}`
+    return `${sign} *Saldo Saat Ini*\n${formatSignedRp(saldo)}`
+  }
+
+  if (
+    cmd.startsWith('/set saldo') ||
+    cmd.startsWith('/setsaldo') ||
+    cmd.startsWith('/saldo awal')
+  ) {
+    const amount = parseAmount(cmd)
+    if (amount === null) {
+      return [
+        '⚠️ Nominal saldo belum terbaca.',
+        'Contoh:',
+        '  /set saldo 1000000',
+        '  /set saldo 1jt',
+        '  /saldo awal 0',
+      ].join('\n')
+    }
+
+    await setInitialBalance(amount, spreadsheetId)
+    const saldo = await getCurrentSaldo(spreadsheetId)
+    return [
+      '✅ *Saldo awal diset*',
+      `Saldo awal: ${formatSignedRp(amount)}`,
+      `Saldo saat ini: ${formatSignedRp(saldo)}`,
+    ].join('\n')
   }
 
   // /laporan atau /laporan bulan ini
@@ -80,6 +133,7 @@ export async function handleCommand(text: string, spreadsheetId?: string): Promi
       '',
       '📋 *Perintah*',
       '  /saldo — cek saldo saat ini',
+      '  /set saldo 1000000 — set saldo awal',
       '  /laporan — rekap bulan ini',
       '  /laporan minggu ini — rekap 7 hari',
       '  /laporan bulan lalu — rekap bulan lalu',
