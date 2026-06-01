@@ -1,0 +1,29 @@
+# Dependencies/build output
+node_modules/
+dist/
+coverage/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+credentials/
+
+# WhatsApp/Baileys local sessions
+auth_info_baileys/
+auth_info_baileys.backup/
+
+# Generated invoice/runtime files
+invoices/
+*.log
+
+# Local/debug artifacts
+.DS_Store
+.claude/
+2026-*.txt
+assets/calibrate-*.png
+assets/test-*.png
+assets/coords-*.png
+assets/ref-*.png
+Invoice AZERAKOL.ID_*.png
+Empty Invoice AZERAKOL.ID_Pigeon May_INV-AZK-202605-014.png
