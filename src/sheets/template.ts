@@ -219,6 +219,28 @@ export function buildFormatRequests(ids: SheetIds): sheets_v4.Schema$Request[] {
 
   req.push({
     repeatCell: {
+      range: { sheetId: ids.transaksi, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 8 },
+      cell: {
+        userEnteredFormat: {
+          backgroundColor: COLOR.white,
+          textFormat: { bold: false, foregroundColor: COLOR.black },
+          horizontalAlignment: 'LEFT',
+        },
+      },
+      fields: 'userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.foregroundColor,userEnteredFormat.horizontalAlignment',
+    },
+  })
+
+  req.push({
+    repeatCell: {
+      range: { sheetId: ids.transaksi, startRowIndex: 1, startColumnIndex: 5, endColumnIndex: 7 },
+      cell: { userEnteredFormat: { horizontalAlignment: 'RIGHT' } },
+      fields: 'userEnteredFormat.horizontalAlignment',
+    },
+  })
+
+  req.push({
+    repeatCell: {
       range: { sheetId: ids.transaksi, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 },
       cell: { userEnteredFormat: dateFormat() },
       fields: 'userEnteredFormat.numberFormat',
