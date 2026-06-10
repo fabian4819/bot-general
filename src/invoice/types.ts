@@ -1,8 +1,8 @@
 export interface InvoiceItem {
   name: string
   description: string
-  qty: number
-  rate: number
+  qty: number | null
+  rate: number | null
 }
 
 export interface InvoiceData {

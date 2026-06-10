@@ -4,7 +4,7 @@ import path from 'path'
 import fs from 'fs'
 import { InvoiceData } from './types'
 
-const TEMPLATE   = path.join(process.cwd(), 'Empty Invoice AZERAKOL.ID_Pigeon May_INV-AZK-202605-014 copy.png')
+const TEMPLATE   = path.join(process.cwd(), 'template-invoice.png')
 const OUTPUT_DIR = path.join(process.cwd(), 'invoices')
 
 const PAGE_W = 1240
@@ -133,12 +133,12 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
     const nameY  = rowTop + 45
     const descY  = nameY + 32
     const valueY = rowTop + 54
-    const amount = item.qty * item.rate
+    const amount = (item.qty ?? 0) * (item.rate ?? 0)
     lines.push(`<text x="${COL_ITEM_X}" y="${nameY}" font-size="22" font-weight="bold" fill="#1a1a1a">${escape(item.name)}</text>`)
     lines.push(`<text x="${COL_ITEM_X}" y="${descY}" font-size="15" fill="#666">${escape(item.description)}</text>`)
-    lines.push(`<text x="${COL_QTY_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="middle">${item.qty}</text>`)
-    lines.push(`<text x="${COL_RATE_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="end">${formatRp(item.rate)}</text>`)
-    lines.push(`<text x="${COL_AMT_X}" y="${valueY}" font-size="22" font-weight="bold" fill="#1a1a1a" text-anchor="end">${formatRp(amount)}</text>`)
+    lines.push(`<text x="${COL_QTY_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="middle">${item.qty ?? '-'}</text>`)
+    lines.push(`<text x="${COL_RATE_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="end">${item.rate !== null ? formatRp(item.rate) : '-'}</text>`)
+    lines.push(`<text x="${COL_AMT_X}" y="${valueY}" font-size="22" font-weight="bold" fill="#1a1a1a" text-anchor="end">${(item.qty !== null && item.rate !== null) ? formatRp(amount) : '-'}</text>`)
     const lineY = rowTop + ITEM_ROW_H
     if (i < data.items.length - 1) lines.push(`<line x1="${TABLE_X}" y1="${lineY}" x2="${TABLE_RIGHT}" y2="${lineY}" stroke="#EAEAEA" stroke-width="1"/>`)
   })
@@ -208,7 +208,7 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
 export async function generateInvoice(data: InvoiceData): Promise<string> {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-  const total = data.items.reduce((sum, i) => sum + i.qty * i.rate, 0)
+  const total = data.items.reduce((sum, i) => sum + (i.qty ?? 0) * (i.rate ?? 0), 0)
   const { svg, svgHeight } = buildSvg(data, total)
   const renderW = PAGE_W * RENDER_SCALE
   const renderH = svgHeight * RENDER_SCALE

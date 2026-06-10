@@ -43,8 +43,8 @@ export function invoiceHelp(): string {
     `/invoice`,
     `[nama klien]`,
     `[nama campaign]`,
-    `[item] | [deskripsi] | [qty] | [rate]`,
-    `[item 2] | [deskripsi] | [qty] | [rate]`,
+    `[item] | [deskripsi] | [qty/-] | [rate/-]`,
+    `[item 2] | [deskripsi] | [qty/-] | [rate/-]`,
     `\`\`\``,
     ``,
     `*Contoh:*`,
@@ -53,9 +53,11 @@ export function invoiceHelp(): string {
     `Pintarnya`,
     `Pigeon May`,
     `Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
-    `Pigeon Micro | 1x VT + IG Reels | 15 | 250000`,
+    `Pigeon Micro | 1x VT + IG Reels | - | -`,
+    `Pigeon Mini | Strategy Pack | 5 | 250000`,
     `\`\`\``,
     ``,
+    `Gunakan \`-\` untuk qty/rate yang tidak perlu angka.`,
     `Due date otomatis *${formatDate(addDays(now, 7), tz)}*`,
   ].join('\n')
 }
@@ -83,13 +85,23 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
       return { reply: `❌ Format item salah: "${line}"\nHarus: nama | deskripsi | qty | rate` }
     }
     const [name, description, qtyStr, rateStr] = parts
-    const qty = parseInt(qtyStr.replace(/\D/g, ''))
-    const rate = parseRateInput(rateStr)
-    if (isNaN(qty) || qty <= 0) {
-      return { reply: `❌ Qty tidak valid: "${qtyStr}"` }
+    let qty: number | null = null
+    if (qtyStr === '-' || qtyStr === '') {
+      qty = null
+    } else {
+      qty = parseInt(qtyStr.replace(/\D/g, ''))
+      if (isNaN(qty) || qty <= 0) {
+        return { reply: `❌ Qty tidak valid: "${qtyStr}"` }
+      }
     }
-    if (rate === null) {
-      return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
+    let rate: number | null = null
+    if (rateStr === '-' || rateStr === '') {
+      rate = null
+    } else {
+      rate = parseRateInput(rateStr)
+      if (rate === null) {
+        return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
+      }
     }
     items.push({ name, description, qty, rate })
   }
@@ -107,9 +119,15 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
     items,
   }
 
-  const total = items.reduce((s, i) => s + i.qty * i.rate, 0)
+  const total = items.reduce((s, i) => s + (i.qty ?? 0) * (i.rate ?? 0), 0)
   const summary = items
-    .map(i => `   • ${i.name}: ${i.qty} × Rp${i.rate.toLocaleString('id-ID')} = Rp${(i.qty * i.rate).toLocaleString('id-ID')}`)
+    .map(i => {
+      const qtyStr = i.qty !== null ? String(i.qty) : '-'
+      const rateStr = i.rate !== null ? `Rp${i.rate.toLocaleString('id-ID')}` : '-'
+      const amt = (i.qty ?? 0) * (i.rate ?? 0)
+      const amtStr = (i.qty !== null && i.rate !== null) ? `Rp${amt.toLocaleString('id-ID')}` : '-'
+      return `   • ${i.name}: ${qtyStr} × ${rateStr} = ${amtStr}`
+    })
     .join('\n')
 
   try {
