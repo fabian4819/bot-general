@@ -2,12 +2,13 @@ import sharp from 'sharp'
 import { PDFDocument } from 'pdf-lib'
 import path from 'path'
 import fs from 'fs'
+import { Readable } from 'stream'
 import { InvoiceData } from './types'
-import { getDriveClient } from '../sheets/client'
+import { getDriveUploadClient } from '../sheets/client'
 
 const TEMPLATE   = path.join(process.cwd(), 'template-invoice.png')
 const OUTPUT_DIR = path.join(process.cwd(), 'invoices')
-const DRIVE_FOLDER_ID = process.env.INVOICE_DRIVE_FOLDER_ID || '1iWgZHSRY4hWos6_0v6r-yZ4IDbOyQHgE'
+const DRIVE_FOLDER_ID = process.env.INVOICE_DRIVE_FOLDER_ID || '1Hl--CoPa5y8UNKRoWB3SoXReGZyDItwd'
 
 const PAGE_W = 1240
 const PAGE_H = 1754  // pixel height of one A4-proportioned page
@@ -269,7 +270,7 @@ export async function generateInvoice(data: InvoiceData): Promise<{ localPath: s
 
   let driveUrl: string | null = null
   try {
-    const drive = getDriveClient()
+    const drive = getDriveUploadClient()
     const res = await drive.files.create({
       requestBody: {
         name: fileName,
@@ -277,9 +278,10 @@ export async function generateInvoice(data: InvoiceData): Promise<{ localPath: s
       },
       media: {
         mimeType: 'application/pdf',
-        body: require('stream').Readable.from(Buffer.from(pdfBytes)),
+        body: Readable.from(Buffer.from(pdfBytes)),
       },
       fields: 'id,webViewLink',
+      supportsAllDrives: true,
     })
     driveUrl = res.data.webViewLink || `https://drive.google.com/file/d/${res.data.id}/view`
     console.log(`[Invoice] Uploaded to Drive: ${driveUrl}`)

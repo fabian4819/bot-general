@@ -5,7 +5,9 @@ import path from 'path'
 
 let _sheets: sheets_v4.Sheets | null = null
 let _drive: drive_v3.Drive | null = null
+let _driveUpload: drive_v3.Drive | null = null
 let _auth: ReturnType<typeof loadAuth> | null = null
+let _oauthAuth: InstanceType<typeof google.auth.OAuth2> | null = null
 
 const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
@@ -56,4 +58,23 @@ export function getSpreadsheetId(): string {
   const id = process.env.SPREADSHEET_ID
   if (!id) throw new Error('SPREADSHEET_ID not set. Run: npm run setup-sheets')
   return id
+}
+
+function getOAuthAuth() {
+  if (_oauthAuth) return _oauthAuth
+  const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET
+  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('GOOGLE_DRIVE_CLIENT_ID, CLIENT_SECRET, dan REFRESH_TOKEN harus di-set untuk upload Drive')
+  }
+  _oauthAuth = new google.auth.OAuth2(clientId, clientSecret)
+  _oauthAuth.setCredentials({ refresh_token: refreshToken })
+  return _oauthAuth
+}
+
+export function getDriveUploadClient(): drive_v3.Drive {
+  if (_driveUpload) return _driveUpload
+  _driveUpload = google.drive({ version: 'v3', auth: getOAuthAuth() })
+  return _driveUpload
 }
