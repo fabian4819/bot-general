@@ -2,7 +2,7 @@ export interface InvoiceItem {
   name: string
   description: string
   qty: number | null
-  rate: number | null
+  rate: number
 }
 
 export interface InvoiceData {

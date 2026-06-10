@@ -3,9 +3,11 @@ import { PDFDocument } from 'pdf-lib'
 import path from 'path'
 import fs from 'fs'
 import { InvoiceData } from './types'
+import { getDriveClient } from '../sheets/client'
 
 const TEMPLATE   = path.join(process.cwd(), 'template-invoice.png')
 const OUTPUT_DIR = path.join(process.cwd(), 'invoices')
+const DRIVE_FOLDER_ID = process.env.INVOICE_DRIVE_FOLDER_ID || '1iWgZHSRY4hWos6_0v6r-yZ4IDbOyQHgE'
 
 const PAGE_W = 1240
 const PAGE_H = 1754  // pixel height of one A4-proportioned page
@@ -133,12 +135,12 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
     const nameY  = rowTop + 45
     const descY  = nameY + 32
     const valueY = rowTop + 54
-    const amount = (item.qty ?? 0) * (item.rate ?? 0)
+    const amount = (item.qty ?? 1) * item.rate
     lines.push(`<text x="${COL_ITEM_X}" y="${nameY}" font-size="22" font-weight="bold" fill="#1a1a1a">${escape(item.name)}</text>`)
     lines.push(`<text x="${COL_ITEM_X}" y="${descY}" font-size="15" fill="#666">${escape(item.description)}</text>`)
     lines.push(`<text x="${COL_QTY_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="middle">${item.qty ?? '-'}</text>`)
-    lines.push(`<text x="${COL_RATE_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="end">${item.rate !== null ? formatRp(item.rate) : '-'}</text>`)
-    lines.push(`<text x="${COL_AMT_X}" y="${valueY}" font-size="22" font-weight="bold" fill="#1a1a1a" text-anchor="end">${(item.qty !== null && item.rate !== null) ? formatRp(amount) : '-'}</text>`)
+    lines.push(`<text x="${COL_RATE_X}" y="${valueY}" font-size="22" fill="#1a1a1a" text-anchor="end">${formatRp(item.rate)}</text>`)
+    lines.push(`<text x="${COL_AMT_X}" y="${valueY}" font-size="22" font-weight="bold" fill="#1a1a1a" text-anchor="end">${formatRp(amount)}</text>`)
     const lineY = rowTop + ITEM_ROW_H
     if (i < data.items.length - 1) lines.push(`<line x1="${TABLE_X}" y1="${lineY}" x2="${TABLE_RIGHT}" y2="${lineY}" stroke="#EAEAEA" stroke-width="1"/>`)
   })
@@ -205,10 +207,10 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
   return { svg, svgHeight }
 }
 
-export async function generateInvoice(data: InvoiceData): Promise<string> {
+export async function generateInvoice(data: InvoiceData): Promise<{ localPath: string; driveUrl: string | null }> {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-  const total = data.items.reduce((sum, i) => sum + (i.qty ?? 0) * (i.rate ?? 0), 0)
+  const total = data.items.reduce((sum, i) => sum + (i.qty ?? 1) * i.rate, 0)
   const { svg, svgHeight } = buildSvg(data, total)
   const renderW = PAGE_W * RENDER_SCALE
   const renderH = svgHeight * RENDER_SCALE
@@ -262,7 +264,28 @@ export async function generateInvoice(data: InvoiceData): Promise<string> {
 
   const fileName   = `Invoice AZERAKOL.ID_${data.campaign}_${data.invoiceNo}.pdf`
   const outputPath = path.join(OUTPUT_DIR, fileName)
-  fs.writeFileSync(outputPath, await pdfDoc.save())
+  const pdfBytes   = await pdfDoc.save()
+  fs.writeFileSync(outputPath, pdfBytes)
 
-  return outputPath
+  let driveUrl: string | null = null
+  try {
+    const drive = getDriveClient()
+    const res = await drive.files.create({
+      requestBody: {
+        name: fileName,
+        parents: [DRIVE_FOLDER_ID],
+      },
+      media: {
+        mimeType: 'application/pdf',
+        body: require('stream').Readable.from(Buffer.from(pdfBytes)),
+      },
+      fields: 'id,webViewLink',
+    })
+    driveUrl = res.data.webViewLink || `https://drive.google.com/file/d/${res.data.id}/view`
+    console.log(`[Invoice] Uploaded to Drive: ${driveUrl}`)
+  } catch (err) {
+    console.error('[Invoice] Drive upload failed:', err)
+  }
+
+  return { localPath: outputPath, driveUrl }
 }

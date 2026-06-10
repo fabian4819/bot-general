@@ -53,16 +53,16 @@ export function invoiceHelp(): string {
     `Pintarnya`,
     `Pigeon May`,
     `Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
-    `Pigeon Micro | 1x VT + IG Reels | - | -`,
+    `Pigeon Micro | 1x VT + IG Reels | - | 150rb`,
     `Pigeon Mini | Strategy Pack | 5 | 250000`,
     `\`\`\``,
     ``,
-    `Gunakan \`-\` untuk qty/rate yang tidak perlu angka.`,
+    `Gunakan \`-\` untuk qty bila tidak perlu jumlah.`,
     `Due date otomatis *${formatDate(addDays(now, 7), tz)}*`,
   ].join('\n')
 }
 
-export async function parseAndGenerateInvoice(body: string): Promise<{ reply: string; filePath?: string }> {
+export async function parseAndGenerateInvoice(body: string): Promise<{ reply: string; filePath?: string; driveUrl?: string }> {
   const lines = body.split('\n').map(l => l.trim()).filter(Boolean).slice(1)
 
   if (lines.length < 3) {
@@ -94,14 +94,9 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
         return { reply: `❌ Qty tidak valid: "${qtyStr}"` }
       }
     }
-    let rate: number | null = null
-    if (rateStr === '-' || rateStr === '') {
-      rate = null
-    } else {
-      rate = parseRateInput(rateStr)
-      if (rate === null) {
-        return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
-      }
+    const rate = parseRateInput(rateStr)
+    if (rate === null) {
+      return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
     }
     items.push({ name, description, qty, rate })
   }
@@ -119,29 +114,32 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
     items,
   }
 
-  const total = items.reduce((s, i) => s + (i.qty ?? 0) * (i.rate ?? 0), 0)
+  const total = items.reduce((s, i) => s + (i.qty ?? 1) * i.rate, 0)
   const summary = items
     .map(i => {
       const qtyStr = i.qty !== null ? String(i.qty) : '-'
-      const rateStr = i.rate !== null ? `Rp${i.rate.toLocaleString('id-ID')}` : '-'
-      const amt = (i.qty ?? 0) * (i.rate ?? 0)
-      const amtStr = (i.qty !== null && i.rate !== null) ? `Rp${amt.toLocaleString('id-ID')}` : '-'
-      return `   • ${i.name}: ${qtyStr} × ${rateStr} = ${amtStr}`
+      const amt = (i.qty ?? 1) * i.rate
+      return `   • ${i.name}: ${qtyStr} × Rp${i.rate.toLocaleString('id-ID')} = Rp${amt.toLocaleString('id-ID')}`
     })
     .join('\n')
 
   try {
-    const filePath = await generateInvoice(data)
+    const { localPath, driveUrl } = await generateInvoice(data)
+    const replyLines = [
+      `✅ Invoice *${invoiceNo}* dibuat!`,
+      ``,
+      `📋 *${campaign}*`,
+      `👤 ${billTo}`,
+      summary,
+      `💰 Total: *Rp${total.toLocaleString('id-ID')}*`,
+    ]
+    if (driveUrl) {
+      replyLines.push('', `📎 ${driveUrl}`)
+    }
     return {
-      reply: [
-        `✅ Invoice *${invoiceNo}* dibuat!`,
-        ``,
-        `📋 *${campaign}*`,
-        `👤 ${billTo}`,
-        summary,
-        `💰 Total: *Rp${total.toLocaleString('id-ID')}*`,
-      ].join('\n'),
-      filePath,
+      reply: replyLines.join('\n'),
+      filePath: localPath,
+      driveUrl: driveUrl ?? undefined,
     }
   } catch (err) {
     console.error('[Invoice] Generate error:', err)
