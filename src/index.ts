@@ -23,7 +23,6 @@ if (!OWNER_PHONE) {
 }
 
 const ownerJid = `${OWNER_PHONE}@s.whatsapp.net`
-const ownerPhone = OWNER_PHONE
 
 const ALLOWED_PHONES = new Set(
   (process.env.ALLOWED_PHONES || OWNER_PHONE || '')
@@ -64,7 +63,6 @@ function getPhoneNumberFromJid(jid: string): string | null {
 async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH)
   const { version } = await fetchLatestBaileysVersion()
-  let pairingCodeRequested = false
 
   const sock = makeWASocket({
     version,
@@ -86,21 +84,6 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
     if (qr) {
       console.log('\n📱 Scan QR code ini dengan WhatsApp kamu:\n')
       qrcode.generate(qr, { small: true })
-
-      if (!state.creds.registered && !pairingCodeRequested) {
-        pairingCodeRequested = true
-        const phoneNumber = ownerPhone.replace(/\D/g, '')
-        setTimeout(async () => {
-          try {
-            const code = await sock.requestPairingCode(phoneNumber)
-            console.log(`\n🔗 Pairing code WhatsApp: ${code}`)
-            console.log('Buka WhatsApp > Linked devices > Link with phone number, lalu masukkan kode ini.\n')
-          } catch (err) {
-            pairingCodeRequested = false
-            console.error('[Pairing] Gagal request pairing code:', err)
-          }
-        }, 1500)
-      }
     }
 
     if (connection === 'open') {
@@ -129,6 +112,7 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue
+      if (msg.key.fromMe) continue
 
       const remoteJid = msg.key.remoteJid ?? ''
       const messageTs = getMessageTimestampSeconds(msg)
