@@ -43,7 +43,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${INVOICE_SHEET}!A1:H1`,
+    range: `${INVOICE_SHEET}!A1:I1`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[
@@ -55,6 +55,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
         'Campaign',
         'Items',
         'Total',
+        'Drive URL',
       ]],
     },
   })
@@ -83,7 +84,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
           },
         },
         ...[
-          { sheetId: invoiceSheetId, widths: [170, 160, 130, 130, 180, 220, 500, 140] },
+          { sheetId: invoiceSheetId, widths: [170, 160, 130, 130, 180, 220, 500, 140, 320] },
         ].flatMap(({ sheetId, widths }) => widths.map((pixelSize, index) => ({
           updateDimensionProperties: {
             range: { sheetId, dimension: 'COLUMNS', startIndex: index, endIndex: index + 1 },
@@ -101,6 +102,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
 export async function appendInvoiceLog(args: {
   data: InvoiceData
   total: number
+  driveUrl?: string | null
   source?: string
 }): Promise<string | null> {
   const spreadsheetId = getInvoiceSpreadsheetId()
@@ -125,7 +127,7 @@ export async function appendInvoiceLog(args: {
     })
     .join('\n')
 
-  await sheets.spreadsheets.values.append({
+  const res = await sheets.spreadsheets.values.append({
     spreadsheetId,
     range: `${INVOICE_SHEET}!A:H`,
     valueInputOption: 'USER_ENTERED',
@@ -143,6 +145,56 @@ export async function appendInvoiceLog(args: {
       ]],
     },
   })
+
+  if (args.driveUrl) {
+    const updatedRange = res.data.updates?.updatedRange || ''
+    const rowMatch = updatedRange.match(/(\d+)$/)
+    if (rowMatch) {
+      const rowIndex = parseInt(rowMatch[1]) - 1
+      const meta = await sheets.spreadsheets.get({ spreadsheetId })
+      const sheet = meta.data.sheets?.find(s => s.properties?.title === INVOICE_SHEET)
+      const sheetId = sheet?.properties?.sheetId
+      if (sheetId !== undefined) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                updateCells: {
+                  range: {
+                    sheetId,
+                    startRowIndex: rowIndex,
+                    endRowIndex: rowIndex + 1,
+                    startColumnIndex: 8,
+                    endColumnIndex: 9,
+                  },
+                  rows: [
+                    {
+                      values: [
+                        {
+                          userEnteredValue: { stringValue: args.data.invoiceNo },
+                          textFormatRuns: [
+                            {
+                              format: {
+                                link: { uri: args.driveUrl },
+                                foregroundColor: { blue: 0.29, green: 0.43, red: 0.16 },
+                                underline: true,
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                  fields: 'userEnteredValue,textFormatRuns',
+                },
+              },
+            ],
+          },
+        })
+      }
+    }
+  }
 
   return spreadsheetUrl(spreadsheetId)
 }
