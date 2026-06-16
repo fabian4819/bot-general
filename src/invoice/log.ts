@@ -141,7 +141,7 @@ export async function appendInvoiceLog(args: {
         args.data.billTo,
         args.data.campaign,
         itemsParagraph,
-        args.total,
+        `Rp${args.total.toLocaleString('id-ID')}`,
       ]],
     },
   })
