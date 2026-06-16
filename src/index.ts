@@ -127,8 +127,6 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
   })
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return
-
     for (const msg of messages) {
       if (!msg.message) continue
 
@@ -158,7 +156,7 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       const text = getMessageText(msg)
       if (!text) continue
 
-      console.log(`[Bot] from=${remoteJid} identity=${identityJid} text="${text}"`)
+      console.log(`[Bot] type=${type} from=${remoteJid} identity=${identityJid} text="${text}"`)
 
       try {
         const result = await handleMessage(text, identityJid)
