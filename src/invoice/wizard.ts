@@ -1,6 +1,7 @@
 import { InvoiceData, InvoiceItem } from './types'
 import { nextInvoiceNumber, peekInvoiceNumber } from './counter'
 import { generateInvoice } from './generator'
+import { appendInvoiceLog } from './log'
 
 function formatDate(date: Date, tz: string): string {
   return date.toLocaleDateString('en-GB', {
@@ -62,7 +63,7 @@ export function invoiceHelp(): string {
   ].join('\n')
 }
 
-export async function parseAndGenerateInvoice(body: string): Promise<{ reply: string; filePath?: string; driveUrl?: string }> {
+export async function parseAndGenerateInvoice(body: string, source?: string): Promise<{ reply: string; filePath?: string; driveUrl?: string }> {
   const lines = body.split('\n').map(l => l.trim()).filter(Boolean).slice(1)
 
   if (lines.length < 3) {
@@ -125,6 +126,13 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
 
   try {
     const { localPath, driveUrl } = await generateInvoice(data)
+    let logUrl: string | null = null
+    try {
+      logUrl = await appendInvoiceLog({ data, total, localPath, driveUrl, source })
+    } catch (err) {
+      console.error('[Invoice] Log append failed:', err)
+    }
+
     const replyLines = [
       `✅ Invoice *${invoiceNo}* dibuat!`,
       ``,
@@ -135,6 +143,9 @@ export async function parseAndGenerateInvoice(body: string): Promise<{ reply: st
     ]
     if (driveUrl) {
       replyLines.push('', `📎 ${driveUrl}`)
+    }
+    if (logUrl) {
+      replyLines.push('', `📊 Log invoice: ${logUrl}`)
     }
     return {
       reply: replyLines.join('\n'),

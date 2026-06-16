@@ -83,7 +83,7 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
       if (!trimmed.includes('\n')) {
         return { text: invoiceHelp() }
       }
-      const { reply, filePath } = await parseAndGenerateInvoice(trimmed)
+      const { reply, filePath } = await parseAndGenerateInvoice(trimmed, jid)
       if (filePath) {
         return {
           text: reply,
