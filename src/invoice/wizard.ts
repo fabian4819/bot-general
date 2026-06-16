@@ -128,7 +128,7 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     const { localPath, driveUrl } = await generateInvoice(data)
     let logUrl: string | null = null
     try {
-      logUrl = await appendInvoiceLog({ data, total, localPath, driveUrl, source })
+      logUrl = await appendInvoiceLog({ data, total, source })
     } catch (err) {
       console.error('[Invoice] Log append failed:', err)
     }
