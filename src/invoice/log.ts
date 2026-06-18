@@ -13,6 +13,27 @@ function spreadsheetUrl(spreadsheetId: string): string {
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}`
 }
 
+function extractSpreadsheetId(url: string): string | null {
+  return url.match(/\/spreadsheets\/d\/([\w-]+)/i)?.[1] ?? null
+}
+
+async function getMastersheetTitle(url: string): Promise<string> {
+  const spreadsheetId = extractSpreadsheetId(url)
+  if (!spreadsheetId) return 'Mastersheet'
+
+  try {
+    const sheets = getSheetsClient()
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'properties.title',
+    })
+    return meta.data.properties?.title || 'Mastersheet'
+  } catch (err) {
+    console.warn('[Invoice] Mastersheet title unavailable, using fallback label:', err)
+    return 'Mastersheet'
+  }
+}
+
 async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
   if (ensuredSpreadsheetId === spreadsheetId) return
 
@@ -41,9 +62,35 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
     throw new Error('Invoice log sheet gagal dibuat')
   }
 
+  const header = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${INVOICE_SHEET}!A1:J1`,
+  })
+  const headerValues = (header.data.values?.[0] || []).map(String)
+  const needsMastersheetColumn = headerValues[6] === 'Items' && !headerValues.includes('Mastersheet')
+
+  if (needsMastersheetColumn) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
+          insertDimension: {
+            range: {
+              sheetId: invoiceSheetId,
+              dimension: 'COLUMNS',
+              startIndex: 6,
+              endIndex: 7,
+            },
+            inheritFromBefore: true,
+          },
+        }],
+      },
+    })
+  }
+
   await sheets.spreadsheets.values.update({
     spreadsheetId,
-    range: `${INVOICE_SHEET}!A1:I1`,
+    range: `${INVOICE_SHEET}!A1:J1`,
     valueInputOption: 'USER_ENTERED',
     requestBody: {
       values: [[
@@ -53,6 +100,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
         'Due Date',
         'Bill To',
         'Campaign',
+        'Mastersheet',
         'Items',
         'Total',
         'Drive URL',
@@ -84,7 +132,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
           },
         },
         ...[
-          { sheetId: invoiceSheetId, widths: [170, 160, 130, 130, 180, 220, 500, 140, 320] },
+          { sheetId: invoiceSheetId, widths: [170, 160, 130, 130, 180, 220, 260, 500, 140, 320] },
         ].flatMap(({ sheetId, widths }) => widths.map((pixelSize, index) => ({
           updateDimensionProperties: {
             range: { sheetId, dimension: 'COLUMNS', startIndex: index, endIndex: index + 1 },
@@ -127,9 +175,13 @@ export async function appendInvoiceLog(args: {
     })
     .join('\n')
 
+  const mastersheetTitle = args.data.mastersheetUrl
+    ? await getMastersheetTitle(args.data.mastersheetUrl)
+    : ''
+
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId,
-    range: `${INVOICE_SHEET}!A:H`,
+    range: `${INVOICE_SHEET}!A:J`,
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: {
@@ -140,13 +192,15 @@ export async function appendInvoiceLog(args: {
         args.data.dueDate,
         args.data.billTo,
         args.data.campaign,
+        mastersheetTitle,
         itemsParagraph,
         `Rp${args.total.toLocaleString('id-ID')}`,
+        '',
       ]],
     },
   })
 
-  if (args.driveUrl) {
+  if (args.data.mastersheetUrl || args.driveUrl) {
     const updatedRange = res.data.updates?.updatedRange || ''
     const rowMatch = updatedRange.match(/(\d+)$/)
     if (rowMatch) {
@@ -155,41 +209,43 @@ export async function appendInvoiceLog(args: {
       const sheet = meta.data.sheets?.find(s => s.properties?.title === INVOICE_SHEET)
       const sheetId = sheet?.properties?.sheetId
       if (sheetId !== undefined) {
+        const linkCell = (columnIndex: number, label: string, uri: string) => ({
+          updateCells: {
+            range: {
+              sheetId,
+              startRowIndex: rowIndex,
+              endRowIndex: rowIndex + 1,
+              startColumnIndex: columnIndex,
+              endColumnIndex: columnIndex + 1,
+            },
+            rows: [{
+              values: [{
+                userEnteredValue: { stringValue: label },
+                textFormatRuns: [{
+                  format: {
+                    link: { uri },
+                    foregroundColor: { red: 0.16, green: 0.43, blue: 0.79 },
+                    underline: true,
+                  },
+                }],
+              }],
+            }],
+            fields: 'userEnteredValue,textFormatRuns',
+          },
+        })
+
+        const requests = []
+        if (args.data.mastersheetUrl) {
+          requests.push(linkCell(6, mastersheetTitle, args.data.mastersheetUrl))
+        }
+        if (args.driveUrl) {
+          requests.push(linkCell(9, args.data.invoiceNo, args.driveUrl))
+        }
+
         await sheets.spreadsheets.batchUpdate({
           spreadsheetId,
           requestBody: {
-            requests: [
-              {
-                updateCells: {
-                  range: {
-                    sheetId,
-                    startRowIndex: rowIndex,
-                    endRowIndex: rowIndex + 1,
-                    startColumnIndex: 8,
-                    endColumnIndex: 9,
-                  },
-                  rows: [
-                    {
-                      values: [
-                        {
-                          userEnteredValue: { stringValue: args.data.invoiceNo },
-                          textFormatRuns: [
-                            {
-                              format: {
-                                link: { uri: args.driveUrl },
-                                foregroundColor: { blue: 0.29, green: 0.43, red: 0.16 },
-                                underline: true,
-                              },
-                            },
-                          ],
-                        },
-                      ],
-                    },
-                  ],
-                  fields: 'userEnteredValue,textFormatRuns',
-                },
-              },
-            ],
+            requests,
           },
         })
       }

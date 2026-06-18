@@ -11,6 +11,7 @@ export interface InvoiceData {
   dueDate: string      // formatted: "5 June 2026"
   billTo: string
   campaign: string
+  mastersheetUrl?: string
   items: InvoiceItem[]
 }
 

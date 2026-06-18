@@ -46,6 +46,9 @@ export function invoiceHelp(): string {
     `[nama campaign]`,
     `[item] | [deskripsi] | [qty/-] | [rate/-]`,
     `[item 2] | [deskripsi] | [qty/-] | [rate/-]`,
+    ``,
+    `Mastersheet`,
+    `[link Google Sheets]`,
     `\`\`\``,
     ``,
     `*Contoh:*`,
@@ -56,9 +59,13 @@ export function invoiceHelp(): string {
     `Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
     `Pigeon Micro | 1x VT + IG Reels | - | 150rb`,
     `Pigeon Mini | Strategy Pack | 5 | 250000`,
+    ``,
+    `Mastersheet`,
+    `https://docs.google.com/spreadsheets/d/xxxxxxxx/edit`,
     `\`\`\``,
     ``,
     `Gunakan \`-\` untuk qty bila tidak perlu jumlah.`,
+    `Bagian \`Mastersheet\` opsional; letakkan setelah semua item.`,
     `Due date otomatis *${formatDate(addDays(now, 7), tz)}*`,
   ].join('\n')
 }
@@ -77,7 +84,27 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     }
   }
 
-  const [billTo, campaign, ...itemLines] = lines
+  const [billTo, campaign, ...contentLines] = lines
+  const mastersheetIndex = contentLines.findIndex(line => line.toLowerCase() === 'mastersheet')
+  let mastersheetUrl: string | undefined
+  let itemLines = contentLines
+
+  if (mastersheetIndex >= 0) {
+    itemLines = contentLines.slice(0, mastersheetIndex)
+    const mastersheetLines = contentLines.slice(mastersheetIndex + 1)
+    if (mastersheetLines.length !== 1) {
+      return { reply: `❌ Setelah "Mastersheet" harus ada tepat 1 link Google Sheets.` }
+    }
+
+    mastersheetUrl = mastersheetLines[0].replace(/[,.]+$/, '')
+    if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+(?:\/.*)?$/i.test(mastersheetUrl)) {
+      return { reply: `❌ Link Mastersheet tidak valid. Gunakan link Google Sheets lengkap.` }
+    }
+  }
+
+  if (itemLines.length === 0) {
+    return { reply: `❌ Invoice harus memiliki minimal 1 item.` }
+  }
 
   const items: InvoiceItem[] = []
   for (const line of itemLines) {
@@ -112,6 +139,7 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     dueDate: formatDateTitleCase(addDays(now, 7), tz),
     billTo,
     campaign,
+    mastersheetUrl,
     items,
   }
 
