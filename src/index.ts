@@ -143,15 +143,32 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       try {
         const result = await handleMessage(text, identityJid)
         if (!result.text && !result.document) continue
+        const isGroup = remoteJid.endsWith('@g.us')
+
         if (result.document) {
-          await sock.sendMessage(remoteJid, {
-            document: result.document,
-            mimetype: result.documentMimetype ?? 'application/pdf',
-            fileName: result.documentFileName,
-            caption: result.text,
-          })
+          if (isGroup) {
+            if (result.text) {
+              await sock.sendMessage(remoteJid, { text: result.text }, { quoted: msg })
+              console.log(`[Bot] group text reply sent to=${remoteJid}`)
+            }
+            await sock.sendMessage(remoteJid, {
+              document: result.document,
+              mimetype: result.documentMimetype ?? 'application/pdf',
+              fileName: result.documentFileName,
+            }, { quoted: msg })
+            console.log(`[Bot] group document sent to=${remoteJid}`)
+          } else {
+            await sock.sendMessage(remoteJid, {
+              document: result.document,
+              mimetype: result.documentMimetype ?? 'application/pdf',
+              fileName: result.documentFileName,
+              caption: result.text,
+            })
+            console.log(`[Bot] document reply sent to=${remoteJid}`)
+          }
         } else if (result.text) {
-          await sock.sendMessage(remoteJid, { text: result.text })
+          await sock.sendMessage(remoteJid, { text: result.text }, isGroup ? { quoted: msg } : undefined)
+          console.log(`[Bot] text reply sent to=${remoteJid}`)
         }
       } catch (err) {
         console.error('[Handler] Error:', err)
