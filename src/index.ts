@@ -52,12 +52,15 @@ function getPhoneJidFromMessage(msg: proto.IWebMessageInfo): string | null {
     senderPn?: string
     participantPn?: string
   }
-  return key.senderPn || key.participantPn || null
+  const remoteJid = key.remoteJid || ''
+  const isGroup = remoteJid.endsWith('@g.us')
+  return key.participantPn || key.senderPn || (isGroup ? key.participant : remoteJid) || null
 }
 
 function getPhoneNumberFromJid(jid: string): string | null {
   if (!jid.endsWith('@s.whatsapp.net')) return null
-  return jid.split('@')[0]
+  const phone = jid.split('@')[0].split(':')[0].replace(/\D/g, '')
+  return phone || null
 }
 
 async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
@@ -112,7 +115,6 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
       if (!msg.message) continue
-      if (msg.key.fromMe) continue
 
       const remoteJid = msg.key.remoteJid ?? ''
       const messageTs = getMessageTimestampSeconds(msg)
@@ -121,24 +123,20 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
         continue
       }
 
-      // Skip group chats
-      if (remoteJid.endsWith('@g.us')) continue
+      const text = getMessageText(msg)
+      if (!text || !text.startsWith('/')) continue
 
-      const identityJid = getPhoneJidFromMessage(msg) || remoteJid
+      const identityJid = msg.key.fromMe
+        ? ownerJid
+        : getPhoneJidFromMessage(msg) || remoteJid
       const phoneNumber = getPhoneNumberFromJid(identityJid)
 
-      // Only respond to allowed numbers
-      // @lid is WhatsApp's privacy format. If Baileys exposes senderPn/participantPn,
-      // use that real phone JID for filtering and per-user spreadsheet selection.
-      if (phoneNumber) {
-        if (!ALLOWED_PHONES.has(phoneNumber)) {
-          console.log(`[Filter] blocked jid=${remoteJid} identity=${identityJid}`)
-          continue
-        }
+      // Fail closed: commands only run when the sender's real phone number is known
+      // and explicitly allowed. In groups participantPn identifies the sender.
+      if (!phoneNumber || !ALLOWED_PHONES.has(phoneNumber)) {
+        console.log(`[Filter] blocked jid=${remoteJid} identity=${identityJid}`)
+        continue
       }
-
-      const text = getMessageText(msg)
-      if (!text) continue
 
       console.log(`[Bot] type=${type} from=${remoteJid} identity=${identityJid} text="${text}"`)
 

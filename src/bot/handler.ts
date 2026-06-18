@@ -72,7 +72,7 @@ export type HandlerResult = {
 
 export async function handleMessage(text: string, jid: string): Promise<HandlerResult> {
   const trimmed = text.trim()
-  if (!trimmed) return { text: '' }
+  if (!trimmed || !trimmed.startsWith('/')) return { text: '' }
 
   // ── Slash commands ───────────────────────────────────────────────────────────
   if (trimmed.startsWith('/')) {
@@ -95,32 +95,36 @@ export async function handleMessage(text: string, jid: string): Promise<HandlerR
       return { text: reply }
     }
 
-    if (!commandNeedsSpreadsheet(firstLine)) {
-      const reply = await handleCommand(trimmed)
-      if (reply) return { text: reply }
+    if (commandNeedsSpreadsheet(firstLine)) {
+      const sheet = await getOrCreateUserSpreadsheet(jid)
+      const reply = await handleCommand(trimmed, sheet.record.spreadsheetId)
+      if (reply) {
+        return {
+          text: withSpreadsheetNotice(reply, sheet.created, sheet.fallback, sheet.record.spreadsheetUrl),
+        }
+      }
       return { text: `❓ Perintah tidak dikenal. Ketik /help untuk daftar perintah.` }
     }
 
-    const sheet = await getOrCreateUserSpreadsheet(jid)
-    const reply = await handleCommand(trimmed, sheet.record.spreadsheetId)
-    if (reply) {
-      return {
-        text: withSpreadsheetNotice(reply, sheet.created, sheet.fallback, sheet.record.spreadsheetUrl),
-      }
-    }
-    return { text: `❓ Perintah tidak dikenal. Ketik /help untuk daftar perintah.` }
+    const reply = await handleCommand(trimmed)
+    if (reply) return { text: reply }
   }
 
   // ── Cashflow transaction ─────────────────────────────────────────────────────
-  let result = parseMessage(trimmed)
+  const transactionText = trimmed.slice(1).trim()
+  if (!transactionText) {
+    return { text: `❓ Format belum lengkap. Contoh: /makan siang 25rb` }
+  }
+
+  let result = parseMessage(transactionText)
 
   if (!result.success) {
-    console.log(`[Parser] Regex failed ("${trimmed}"), trying AI...`)
-    result = await parseWithAI(trimmed)
+    console.log(`[Parser] Regex failed ("${transactionText}"), trying AI...`)
+    result = await parseWithAI(transactionText)
   }
 
   if (!result.success || !result.transaction) {
-    return { text: `❓ Tidak terdeteksi sebagai transaksi. Ketik /help untuk contoh format.` }
+    return { text: `❓ Tidak terdeteksi sebagai transaksi. Contoh: /makan siang 25rb` }
   }
 
   const tx = buildTransaction(result.transaction)
