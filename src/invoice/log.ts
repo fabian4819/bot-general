@@ -3,9 +3,26 @@ import { InvoiceData } from './types'
 
 const INVOICE_SHEET = 'Invoices'
 
-let ensuredSpreadsheetId: string | null = null
+const ensuredSpreadsheetIds = new Set<string>()
 
-function getInvoiceSpreadsheetId(): string | null {
+function getPhoneFromSource(source?: string): string | null {
+  if (!source) return null
+  const jidUser = source.split('@')[0].split(':')[0]
+  const phone = jidUser.replace(/\D/g, '')
+  return phone || null
+}
+
+export function resolveInvoiceSpreadsheetId(source?: string): string | null {
+  const phone = getPhoneFromSource(source)
+  const mappings = process.env.INVOICE_USER_SPREADSHEETS || ''
+
+  if (phone) {
+    for (const item of mappings.split(',')) {
+      const [mappedPhone, spreadsheetId] = item.split(':').map(part => part.trim())
+      if (mappedPhone === phone && spreadsheetId) return spreadsheetId
+    }
+  }
+
   return process.env.INVOICE_SPREADSHEET_ID || null
 }
 
@@ -35,7 +52,7 @@ async function getMastersheetTitle(url: string): Promise<string> {
 }
 
 async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
-  if (ensuredSpreadsheetId === spreadsheetId) return
+  if (ensuredSpreadsheetIds.has(spreadsheetId)) return
 
   const sheets = getSheetsClient()
   const meta = await sheets.spreadsheets.get({ spreadsheetId })
@@ -144,7 +161,7 @@ async function ensureInvoiceLogSheets(spreadsheetId: string): Promise<void> {
     },
   })
 
-  ensuredSpreadsheetId = spreadsheetId
+  ensuredSpreadsheetIds.add(spreadsheetId)
 }
 
 export async function appendInvoiceLog(args: {
@@ -153,9 +170,9 @@ export async function appendInvoiceLog(args: {
   driveUrl?: string | null
   source?: string
 }): Promise<string | null> {
-  const spreadsheetId = getInvoiceSpreadsheetId()
+  const spreadsheetId = resolveInvoiceSpreadsheetId(args.source)
   if (!spreadsheetId) {
-    console.warn('[Invoice] INVOICE_SPREADSHEET_ID not set, invoice log skipped')
+    console.warn('[Invoice] No invoice spreadsheet configured, invoice log skipped')
     return null
   }
 
