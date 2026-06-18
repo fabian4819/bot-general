@@ -16,6 +16,8 @@ const logger = pino({ level: 'silent' })
 const SESSION_PATH = process.env.SESSION_PATH || './auth_info_baileys'
 const OWNER_PHONE = process.env.OWNER_PHONE
 const BOT_START_TS = Math.floor(Date.now() / 1000)
+let activeMessageHandlers = 0
+let shuttingDown = false
 
 if (!OWNER_PHONE) {
   console.error('❌ OWNER_PHONE not set in .env')
@@ -114,6 +116,7 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
+      if (shuttingDown) continue
       if (!msg.message) continue
 
       const remoteJid = msg.key.remoteJid ?? ''
@@ -140,32 +143,20 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
 
       console.log(`[Bot] type=${type} from=${remoteJid} identity=${identityJid} text="${text}"`)
 
+      activeMessageHandlers += 1
       try {
         const result = await handleMessage(text, identityJid)
         if (!result.text && !result.document) continue
         const isGroup = remoteJid.endsWith('@g.us')
 
         if (result.document) {
-          if (isGroup) {
-            if (result.text) {
-              await sock.sendMessage(remoteJid, { text: result.text }, { quoted: msg })
-              console.log(`[Bot] group text reply sent to=${remoteJid}`)
-            }
-            await sock.sendMessage(remoteJid, {
-              document: result.document,
-              mimetype: result.documentMimetype ?? 'application/pdf',
-              fileName: result.documentFileName,
-            }, { quoted: msg })
-            console.log(`[Bot] group document sent to=${remoteJid}`)
-          } else {
-            await sock.sendMessage(remoteJid, {
-              document: result.document,
-              mimetype: result.documentMimetype ?? 'application/pdf',
-              fileName: result.documentFileName,
-              caption: result.text,
-            })
-            console.log(`[Bot] document reply sent to=${remoteJid}`)
-          }
+          await sock.sendMessage(remoteJid, {
+            document: result.document,
+            mimetype: result.documentMimetype ?? 'application/pdf',
+            fileName: result.documentFileName,
+            caption: result.text,
+          }, isGroup ? { quoted: msg } : undefined)
+          console.log(`[Bot] document reply sent to=${remoteJid}`)
         } else if (result.text) {
           await sock.sendMessage(remoteJid, { text: result.text }, isGroup ? { quoted: msg } : undefined)
           console.log(`[Bot] text reply sent to=${remoteJid}`)
@@ -173,12 +164,35 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       } catch (err) {
         console.error('[Handler] Error:', err)
         await sock.sendMessage(remoteJid, { text: '❌ Error saat memproses pesan. Coba lagi.' })
+      } finally {
+        activeMessageHandlers -= 1
       }
     }
   })
 
   return sock
 }
+
+async function shutdownGracefully(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[Shutdown] ${signal} received, waiting for ${activeMessageHandlers} active message(s)`)
+
+  const deadline = Date.now() + 75_000
+  while (activeMessageHandlers > 0 && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  if (activeMessageHandlers > 0) {
+    console.warn(`[Shutdown] Timed out with ${activeMessageHandlers} active message(s)`)
+  } else {
+    console.log('[Shutdown] All active messages completed')
+  }
+  process.exit(0)
+}
+
+process.once('SIGTERM', () => { void shutdownGracefully('SIGTERM') })
+process.once('SIGINT', () => { void shutdownGracefully('SIGINT') })
 
 console.log('🚀 Bot Cashflow starting...')
 connectToWhatsApp().catch(err => {
