@@ -3,6 +3,9 @@ import { getMonthlySummary, getWeeklySummary, getCategorySummary, getCurrentSald
 
 type SendFn = (text: string) => Promise<void>
 
+let activeSend: SendFn | null = null
+let schedulerStarted = false
+
 function formatRp(amount: number): string {
   return `Rp ${Math.abs(amount).toLocaleString('id-ID')}`
 }
@@ -68,21 +71,31 @@ async function sendMonthlyReport(send: SendFn): Promise<void> {
 }
 
 export function startScheduler(send: SendFn): void {
+  activeSend = send
+  if (schedulerStarted) {
+    console.log('[Scheduler] Sender updated after reconnect')
+    return
+  }
+
+  schedulerStarted = true
   const tz = process.env.TIMEZONE || 'Asia/Jakarta'
 
   // Daily report at 21:00
   cron.schedule('0 21 * * *', () => {
-    sendDailyReport(send).catch(err => console.error('[Scheduler] Daily error:', err))
+    if (!activeSend) return
+    sendDailyReport(activeSend).catch(err => console.error('[Scheduler] Daily error:', err))
   }, { timezone: tz })
 
   // Weekly report every Sunday at 20:00
   cron.schedule('0 20 * * 0', () => {
-    sendWeeklyReport(send).catch(err => console.error('[Scheduler] Weekly error:', err))
+    if (!activeSend) return
+    sendWeeklyReport(activeSend).catch(err => console.error('[Scheduler] Weekly error:', err))
   }, { timezone: tz })
 
   // Monthly report on 1st of each month at 08:00
   cron.schedule('0 8 1 * *', () => {
-    sendMonthlyReport(send).catch(err => console.error('[Scheduler] Monthly error:', err))
+    if (!activeSend) return
+    sendMonthlyReport(activeSend).catch(err => console.error('[Scheduler] Monthly error:', err))
   }, { timezone: tz })
 
   console.log('[Scheduler] Started: daily 21:00, weekly Sun 20:00, monthly 1st 08:00')
