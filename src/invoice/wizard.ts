@@ -154,15 +154,14 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
 
   try {
     const { localPath, driveUrl } = await generateInvoice(data)
-    let logUrl: string | null = null
     try {
-      logUrl = await appendInvoiceLog({ data, total, driveUrl, source })
+      await appendInvoiceLog({ data, total, driveUrl, source })
     } catch (err) {
       console.error('[Invoice] Log append failed:', err)
     }
 
     const replyLines = [
-      `✅ Invoice *${invoiceNo}* dibuat!`,
+      `✅ Invoice *${invoiceNo}*`,
       ``,
       `📋 *${campaign}*`,
       `👤 ${billTo}`,
@@ -171,9 +170,6 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     ]
     if (driveUrl) {
       replyLines.push('', `📎 ${driveUrl}`)
-    }
-    if (logUrl) {
-      replyLines.push('', `📊 Log invoice: ${logUrl}`)
     }
     return {
       reply: replyLines.join('\n'),
