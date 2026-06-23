@@ -31,6 +31,18 @@ function parseRateInput(text: string): number | null {
   return null
 }
 
+const SECTION_PREFIXES = [
+  /^bill\s+to\s*:/i,
+  /^client\s*:/i,
+  /^campaign\s*:/i,
+  /^brand\s*:/i,
+  /^item\s*:/i,
+] as const
+
+function isSectionLine(line: string): boolean {
+  return SECTION_PREFIXES.some(re => re.test(line))
+}
+
 export function invoiceHelp(): string {
   const tz = process.env.TIMEZONE || 'Asia/Jakarta'
   const now = new Date()
@@ -38,79 +50,47 @@ export function invoiceHelp(): string {
   return [
     `🧾 *Buat Invoice — ${nextNo}*`,
     ``,
-    `Kirim dalam *1 pesan* dengan format:`,
+    `Kirim dalam *1 pesan* dengan format section:`,
     ``,
     `\`\`\``,
     `/invoice`,
-    `[nama klien]`,
-    `[nama campaign]`,
-    `[item] | [deskripsi] | [qty/-] | [rate/-]`,
-    `[item 2] | [deskripsi] | [qty/-] | [rate/-]`,
+    `Bill To: [nama klien]`,
+    `Campaign: [nama campaign]`,
+    `Item: [nama] | [deskripsi] | [qty/-] | [rate]`,
+    `Item: [nama 2] | [deskripsi] | [qty/-] | [rate]`,
+    ``,
+    `Brand: [nama brand]  (opsional)`,
     ``,
     `Mastersheet`,
-    `[link Google Sheets]`,
+    `[link Google Sheets]  (opsional)`,
     `\`\`\``,
     ``,
     `*Contoh:*`,
     `\`\`\``,
     `/invoice`,
-    `Pintarnya`,
-    `Pigeon May`,
-    `Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
-    `Pigeon Micro | 1x VT + IG Reels | - | 150rb`,
-    `Pigeon Mini | Strategy Pack | 5 | 250000`,
+    `Bill To: Pintarnya`,
+    `Campaign: Pigeon May`,
+    `Brand: Nike`,
+    `Item: Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
+    `Item: Pigeon Micro | 1x VT + IG Reels | - | 150rb`,
     ``,
     `Mastersheet`,
     `https://docs.google.com/spreadsheets/d/xxxxxxxx/edit`,
     `\`\`\``,
     ``,
+    `Section yang tersedia: \`Bill To:\`, \`Campaign:\`, \`Brand:\`, \`Item:\``,
     `Gunakan \`-\` untuk qty bila tidak perlu jumlah.`,
-    `Bagian \`Mastersheet\` opsional; letakkan setelah semua item.`,
     `Due date otomatis *${formatDate(addDays(now, 7), tz)}*`,
   ].join('\n')
 }
 
-export async function parseAndGenerateInvoice(body: string, source?: string): Promise<{ reply: string; filePath?: string; driveUrl?: string }> {
-  const lines = body.split('\n').map(l => l.trim()).filter(Boolean).slice(1)
-
-  if (lines.length < 3) {
-    return {
-      reply: [
-        `❌ Format tidak lengkap. Minimal:`,
-        `  - Nama klien`,
-        `  - Nama campaign`,
-        `  - 1 item (nama | deskripsi | qty | rate)`,
-      ].join('\n'),
-    }
-  }
-
-  const [billTo, campaign, ...contentLines] = lines
-  const mastersheetIndex = contentLines.findIndex(line => line.toLowerCase() === 'mastersheet')
-  let mastersheetUrl: string | undefined
-  let itemLines = contentLines
-
-  if (mastersheetIndex >= 0) {
-    itemLines = contentLines.slice(0, mastersheetIndex)
-    const mastersheetLines = contentLines.slice(mastersheetIndex + 1)
-    if (mastersheetLines.length !== 1) {
-      return { reply: `❌ Setelah "Mastersheet" harus ada tepat 1 link Google Sheets.` }
-    }
-
-    mastersheetUrl = mastersheetLines[0].replace(/[,.]+$/, '')
-    if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+(?:\/.*)?$/i.test(mastersheetUrl)) {
-      return { reply: `❌ Link Mastersheet tidak valid. Gunakan link Google Sheets lengkap.` }
-    }
-  }
-
-  if (itemLines.length === 0) {
-    return { reply: `❌ Invoice harus memiliki minimal 1 item.` }
-  }
-
+function parseItems(itemLines: string[]): InvoiceItem[] {
   const items: InvoiceItem[] = []
   for (const line of itemLines) {
-    const parts = line.split('|').map(p => p.trim())
+    const itemText = line.replace(/^item\s*:\s*/i, '').trim()
+    const parts = itemText.split('|').map(p => p.trim())
     if (parts.length < 4) {
-      return { reply: `❌ Format item salah: "${line}"\nHarus: nama | deskripsi | qty | rate` }
+      throw new Error(`Format item salah: "${line}"\nHarus: Item: nama | deskripsi | qty | rate`)
     }
     const [name, description, qtyStr, rateStr] = parts
     let qty: number | null = null
@@ -119,14 +99,93 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     } else {
       qty = parseInt(qtyStr.replace(/\D/g, ''))
       if (isNaN(qty) || qty <= 0) {
-        return { reply: `❌ Qty tidak valid: "${qtyStr}"` }
+        throw new Error(`Qty tidak valid: "${qtyStr}"`)
       }
     }
     const rate = parseRateInput(rateStr)
     if (rate === null) {
-      return { reply: `❌ Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free` }
+      throw new Error(`Rate tidak valid: "${rateStr}"\nContoh: 150000, 150rb, 1.5jt, 0, free`)
     }
     items.push({ name, description, qty, rate })
+  }
+  return items
+}
+
+export async function parseAndGenerateInvoice(body: string, source?: string): Promise<{ reply: string; filePath?: string; driveUrl?: string }> {
+  const lines = body.split('\n').map(l => l.trim()).filter(Boolean).slice(1)
+
+  // Categorize lines by section prefix
+  let billTo: string | undefined
+  let campaign: string | undefined
+  let brandName: string | undefined
+  const itemLines: string[] = []
+
+  // Parse Mastersheet separately (keyword line + URL on next line)
+  const mastersheetIndex = lines.findIndex(line => line.toLowerCase() === 'mastersheet')
+  let mastersheetUrl: string | undefined
+  let sectionLines = lines
+
+  if (mastersheetIndex >= 0) {
+    sectionLines = lines.slice(0, mastersheetIndex)
+    const mastersheetLines = lines.slice(mastersheetIndex + 1)
+    if (mastersheetLines.length !== 1) {
+      return { reply: `❌ Setelah "Mastersheet" harus ada tepat 1 link Google Sheets.` }
+    }
+    mastersheetUrl = mastersheetLines[0].replace(/[,.]+$/, '')
+    if (!/^https:\/\/docs\.google\.com\/spreadsheets\/d\/[\w-]+(?:\/.*)?$/i.test(mastersheetUrl)) {
+      return { reply: `❌ Link Mastersheet tidak valid. Gunakan link Google Sheets lengkap.` }
+    }
+  }
+
+  for (const line of sectionLines) {
+    if (/^bill\s+to\s*:/i.test(line)) {
+      billTo = line.replace(/^bill\s+to\s*:\s*/i, '').trim()
+    } else if (/^client\s*:/i.test(line)) {
+      billTo = billTo || line.replace(/^client\s*:\s*/i, '').trim()
+    } else if (/^campaign\s*:/i.test(line)) {
+      campaign = line.replace(/^campaign\s*:\s*/i, '').trim()
+    } else if (/^brand\s*:/i.test(line)) {
+      brandName = line.replace(/^brand\s*:\s*/i, '').trim()
+    } else if (/^item\s*:/i.test(line)) {
+      itemLines.push(line)
+    } else if (!isSectionLine(line)) {
+      // Non-section lines that aren't a recognized section are ignored
+      // (previously they'd be treated as positional args — now we require section names)
+    }
+  }
+
+  // Fallback: if billTo/campaign not found via sections, treat first 2
+  // non-section lines as positional (backward compatibility)
+  if ((!billTo || !campaign) && sectionLines.length >= 2) {
+    const nonSection = sectionLines.filter(l => !isSectionLine(l))
+    if (nonSection.length >= 2) {
+      if (!billTo) billTo = nonSection[0]
+      if (!campaign) campaign = nonSection[1]
+      // Remaining non-section lines become positional items (only if no Item: lines used)
+      if (itemLines.length === 0) {
+        for (let i = 2; i < nonSection.length; i++) {
+          itemLines.push(nonSection[i])
+        }
+      }
+    }
+  }
+
+  // Validate required fields
+  if (!billTo) {
+    return { reply: `❌ Gunakan \`Bill To: [nama klien]\` untuk menentukan klien.` }
+  }
+  if (!campaign) {
+    return { reply: `❌ Gunakan \`Campaign: [nama campaign]\` untuk menentukan campaign.` }
+  }
+  if (itemLines.length === 0) {
+    return { reply: `❌ Gunakan \`Item: nama | deskripsi | qty | rate\` untuk menambahkan item.` }
+  }
+
+  let items: InvoiceItem[]
+  try {
+    items = parseItems(itemLines)
+  } catch (err) {
+    return { reply: (err as Error).message }
   }
 
   const tz = process.env.TIMEZONE || 'Asia/Jakarta'
@@ -139,6 +198,7 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     dueDate: formatDateTitleCase(addDays(now, 7), tz),
     billTo,
     campaign,
+    brandName,
     mastersheetUrl,
     items,
   }
