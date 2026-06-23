@@ -10,6 +10,7 @@ const data: InvoiceData = {
   dueDate: '5 June 2026',
   billTo: 'Pintarnya',
   campaign: 'Pigeon May',
+  brandName: 'Nike',
   items: [
     { name: 'Pigeon May Nano',  description: '1x VT + YC + IG Reels', qty: 17, rate: 150_000 },
     { name: 'Pigeon May Micro', description: '1x VT + YC + IG Reels', qty: 15, rate: 250_000 },
