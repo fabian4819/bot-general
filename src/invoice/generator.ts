@@ -202,7 +202,6 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
 
   const svg = `<svg width="${PAGE_W}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
   <defs><style>text { font-family: "Helvetica Neue", Arial, sans-serif; }</style></defs>
-  <text x="765" y="320" font-size="15" fill="#888">INVOICE NO.</text>
   ${data.brandName ? `<text x="765" y="343" font-size="15" fill="#6B46C1">Brand: ${escape(data.brandName)}</text>` : ''}
   <text x="765" y="${noY}" font-size="24" font-weight="bold" fill="#1a1a1a">${escape(data.invoiceNo)}</text>
   <text x="768" y="${issueY}" font-size="15" fill="#555">ISSUE DATE: ${escape(data.issueDate)}</text>
