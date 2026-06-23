@@ -197,9 +197,9 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
   }
 
   const hasBrand = !!data.brandName
-  const noY = hasBrand ? 315 : 330
-  const brandY = 349
-  const issueY = hasBrand ? 383 : 365
+  const noY = hasBrand ? 355 : 370
+  const brandY = 389
+  const issueY = hasBrand ? 423 : 405
 
   const svg = `<svg width="${PAGE_W}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
   <defs><style>text { font-family: "Helvetica Neue", Arial, sans-serif; }</style></defs>
