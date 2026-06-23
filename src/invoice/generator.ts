@@ -196,11 +196,15 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
     addFooter(lines, pageIndex * PAGE_H)
   }
 
+  const hasBrand = !!data.brandName
+  const noY = hasBrand ? 360 : 370
+  const issueY = hasBrand ? 420 : 393
+
   const svg = `<svg width="${PAGE_W}" height="${svgHeight}" xmlns="http://www.w3.org/2000/svg">
   <defs><style>text { font-family: "Helvetica Neue", Arial, sans-serif; }</style></defs>
-  <text x="765" y="370" font-size="24" font-weight="bold" fill="#1a1a1a">${escape(data.invoiceNo)}</text>
-  ${data.brandName ? `<text x="765" y="340" font-size="16" fill="#6B46C1">BRAND: ${escape(data.brandName.toUpperCase())}</text>` : ''}
-  <text x="768" y="393" font-size="15" fill="#555">ISSUE DATE: ${escape(data.issueDate)}</text>
+  <text x="765" y="${noY}" font-size="24" font-weight="bold" fill="#1a1a1a">${escape(data.invoiceNo)}</text>
+  ${data.brandName ? `<text x="765" y="390" font-size="15" fill="#6B46C1">${escape(data.brandName)}</text>` : ''}
+  <text x="768" y="${issueY}" font-size="15" fill="#555">ISSUE DATE: ${escape(data.issueDate)}</text>
   <text x="120" y="590" font-size="21" font-weight="bold" fill="#1a1a1a">${escape(data.billTo)}</text>
   <text x="1130" y="790" font-size="21" font-weight="bold" fill="white" text-anchor="end">Due Date : ${escape(data.dueDate)}</text>
   ${lines.join('\n  ')}
