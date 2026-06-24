@@ -3,6 +3,18 @@ import { parseWithAI } from '../parser/ai'
 import { parseMessage } from '../parser/regex'
 import { ParseResult } from '../types'
 
+function cleanOcrText(raw: string): string {
+  const lines = raw.split('\n')
+    .map(l => l.trim())
+    .filter(l => {
+      if (!l || l.length < 2) return false
+      if (/^[\d%]+$/.test(l)) return false
+      return true
+    })
+
+  return lines.join('\n')
+}
+
 export async function parseImage(
   imageBuffer: Buffer,
   mimeType: string,
@@ -19,24 +31,21 @@ export async function parseImage(
       },
     })
 
-    const rawText = data.text.trim()
-    console.log(`[Vision OCR] Raw text:\n${rawText}`)
+    const cleaned = cleanOcrText(data.text)
+    console.log(`[Vision OCR] Cleaned text:\n${cleaned}`)
 
-    if (!rawText) {
+    if (!cleaned) {
       return { success: false, error: 'Tidak ada teks terbaca dari gambar.' }
     }
 
-    // Use caption + OCR text for parsing
-    const combined = [caption, rawText].filter(Boolean).join('\n')
+    const combined = [caption, cleaned].filter(Boolean).join('\n')
 
-    // Try regex parser first (fast path)
     const regexResult = parseMessage(combined)
     if (regexResult.success && regexResult.transaction) {
       console.log('[Vision] Regex parser succeeded')
       return regexResult
     }
 
-    // Fallback to DeepSeek AI parser
     console.log('[Vision] Regex failed, trying DeepSeek AI...')
     const aiResult = await parseWithAI(combined)
     if (aiResult.success) {

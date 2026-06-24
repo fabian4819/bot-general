@@ -16,12 +16,14 @@ function getClient(): OpenAI {
 
 const SYSTEM_PROMPT = `Kamu adalah parser transaksi keuangan. Ekstrak informasi dari pesan bahasa Indonesia.
 
-Balas HANYA dengan JSON valid, tanpa komentar:
+Pesan bisa berupa teks biasa atau hasil scan OCR (kotor). Abaikan karakter aneh, fokus ke nominal uang dan kategori transaksi.
+
+Balas HANYA dengan JSON valid, tanpa komentar, tanpa markdown:
 {
   "tipe": "Pemasukan" | "Pengeluaran",
   "nominal": <angka, tanpa titik/koma pemisah ribu>,
-  "kategori": <salah satu dari list>,
-  "deskripsi": <teks asli>
+  "kategori": "<salah satu dari list>",
+  "deskripsi": "<deskripsi singkat>"
 }
 
 Kategori Pemasukan: Gaji, Freelance, Bisnis, Investasi, Hadiah, Lainnya
@@ -36,16 +38,24 @@ export async function parseWithAI(text: string): Promise<ParseResult> {
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: text },
+        { role: 'user', content: text.slice(0, 3000) },
       ],
       temperature: 0,
-      max_tokens: 150,
+      max_tokens: 500,
     })
 
     const raw = response.choices[0]?.message?.content
     if (!raw) return { success: false, error: 'AI tidak merespons' }
 
-    const parsed = JSON.parse(raw)
+    const jsonMatch = raw.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) return { success: false, error: 'Respons AI tidak valid' }
+
+    let parsed: any
+    try {
+      parsed = JSON.parse(jsonMatch[0])
+    } catch {
+      return { success: false, error: 'Respons AI tidak valid' }
+    }
 
     if (parsed.error) return { success: false, error: parsed.error }
 
@@ -58,7 +68,7 @@ export async function parseWithAI(text: string): Promise<ParseResult> {
       transaction: {
         tipe: parsed.tipe,
         kategori: parsed.kategori || 'Lainnya',
-        deskripsi: text.trim(),
+        deskripsi: text.trim().slice(0, 200),
         nominal: Number(parsed.nominal),
       },
     }
