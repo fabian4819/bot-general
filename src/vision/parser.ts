@@ -1,37 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import Tesseract from 'tesseract.js'
+import { parseWithAI } from '../parser/ai'
+import { parseMessage } from '../parser/regex'
 import { ParseResult } from '../types'
-
-let genAI: GoogleGenerativeAI | null = null
-
-function getGenAI(): GoogleGenerativeAI {
-  if (!genAI) {
-    const key = process.env.GEMINI_API_KEY
-    if (!key) throw new Error('GEMINI_API_KEY not set')
-    genAI = new GoogleGenerativeAI(key)
-  }
-  return genAI
-}
-
-const PROMPT = `Kamu adalah asisten pencatat keuangan. Dari foto nota/struk/invoice ini, ekstrak informasi transaksi.
-
-Perhatikan:
-- Cari TOTAL PEMBAYARAN (jumlah yang dibayar, bukan subtotal)
-- Jika ada diskon, ambil nominal setelah diskon
-- Default: ini PENGELUARAN (kecuali jelas-jelas tanda terima uang masuk)
-- Deskripsi: nama toko dan ringkasan item
-
-Balas HANYA dengan JSON valid, tanpa komentar:
-{
-  "tipe": "Pemasukan" | "Pengeluaran",
-  "nominal": <angka, tanpa titik/koma pemisah ribu>,
-  "kategori": "<salah satu dari list>",
-  "deskripsi": "<nama toko - item utama>"
-}
-
-Kategori Pemasukan: Gaji, Freelance, Bisnis, Investasi, Hadiah, Lainnya
-Kategori Pengeluaran: Makanan, Transport, Belanja, Utilitas, Kesehatan, Hiburan, Pendidikan, Tabungan, Investasi, Lainnya
-
-Jika foto bukan nota/struk/invoice transaksi, balas: {"error": "bukan nota"}`
 
 export async function parseImage(
   imageBuffer: Buffer,
@@ -39,48 +9,42 @@ export async function parseImage(
   caption?: string
 ): Promise<ParseResult> {
   try {
-    const model = getGenAI().getGenerativeModel({ model: 'gemini-2.5-flash' })
+    console.log('[Vision] Running OCR with Tesseract...')
 
-    const parts: any[] = [
-      {
-        inlineData: {
-          data: imageBuffer.toString('base64'),
-          mimeType,
-        },
+    const { data } = await Tesseract.recognize(imageBuffer, 'eng+ind', {
+      logger: (info) => {
+        if (info.status === 'recognizing text') {
+          console.log(`[Vision OCR] ${Math.round(info.progress * 100)}%`)
+        }
       },
-      { text: PROMPT },
-    ]
+    })
 
-    if (caption) {
-      parts.push({ text: `Catatan pengirim: "${caption}"` })
+    const rawText = data.text.trim()
+    console.log(`[Vision OCR] Raw text:\n${rawText}`)
+
+    if (!rawText) {
+      return { success: false, error: 'Tidak ada teks terbaca dari gambar.' }
     }
 
-    const result = await model.generateContent({ contents: [{ role: 'user', parts }] })
-    const response = result.response
-    const raw = response.text().trim()
+    // Use caption + OCR text for parsing
+    const combined = [caption, rawText].filter(Boolean).join('\n')
 
-    const jsonMatch = raw.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return { success: false, error: 'Respons AI tidak valid' }
-
-    const parsed = JSON.parse(jsonMatch[0])
-
-    if (parsed.error) return { success: false, error: parsed.error }
-
-    if (!parsed.tipe || !parsed.nominal || parsed.nominal <= 0) {
-      return { success: false, error: 'Data tidak lengkap dari AI' }
+    // Try regex parser first (fast path)
+    const regexResult = parseMessage(combined)
+    if (regexResult.success && regexResult.transaction) {
+      console.log('[Vision] Regex parser succeeded')
+      return regexResult
     }
 
-    return {
-      success: true,
-      transaction: {
-        tipe: parsed.tipe,
-        kategori: parsed.kategori || 'Lainnya',
-        deskripsi: parsed.deskripsi || (caption || 'Transaksi dari foto'),
-        nominal: Number(parsed.nominal),
-      },
+    // Fallback to DeepSeek AI parser
+    console.log('[Vision] Regex failed, trying DeepSeek AI...')
+    const aiResult = await parseWithAI(combined)
+    if (aiResult.success) {
+      console.log('[Vision] DeepSeek AI parser succeeded')
     }
+    return aiResult
   } catch (err) {
-    console.error('[Vision Parser]', err)
-    return { success: false, error: 'Vision parser error' }
+    console.error('[Vision] Error:', err)
+    return { success: false, error: 'Gagal memproses foto.' }
   }
 }
