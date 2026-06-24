@@ -4,12 +4,13 @@ import makeWASocket, {
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
+  downloadMediaMessage,
   proto,
 } from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import pino from 'pino'
 import qrcode from 'qrcode-terminal'
-import { handleMessage } from './bot/handler'
+import { handleMessage, handleImageTransaction } from './bot/handler'
 import { startScheduler } from './scheduler/reports'
 
 const logger = pino({ level: 'silent' })
@@ -127,6 +128,55 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       }
 
       const text = getMessageText(msg)
+      const isImage = !!msg.message?.imageMessage
+
+      // ── Image-based transaction (photo of receipt/note) ────────────
+      if (isImage && !text.startsWith('/')) {
+        const identityJid = msg.key.fromMe
+          ? ownerJid
+          : getPhoneJidFromMessage(msg) || remoteJid
+        const phoneNumber = getPhoneNumberFromJid(identityJid)
+        if (!phoneNumber || !ALLOWED_PHONES.has(phoneNumber)) continue
+
+        console.log(`[Bot] image from=${remoteJid} identity=${identityJid} caption="${text}"`)
+
+        activeMessageHandlers += 1
+        try {
+          const imageBuffer = await downloadMediaMessage(
+            msg,
+            'buffer',
+            {},
+            { logger, reuploadRequest: async () => msg }
+          )
+          if (!Buffer.isBuffer(imageBuffer)) {
+            console.log('[Bot] failed to download image')
+            continue
+          }
+          const mimeType = msg.message?.imageMessage?.mimetype || 'image/jpeg'
+          const result = await handleImageTransaction(imageBuffer, mimeType, identityJid, text || undefined)
+          if (!result.text && !result.document) continue
+          const isGroup = remoteJid.endsWith('@g.us')
+
+          if (result.document) {
+            await sock.sendMessage(remoteJid, {
+              document: result.document,
+              mimetype: result.documentMimetype ?? 'application/pdf',
+              fileName: result.documentFileName,
+              caption: result.text,
+            }, isGroup ? { quoted: msg } : undefined)
+          } else if (result.text) {
+            await sock.sendMessage(remoteJid, { text: result.text }, isGroup ? { quoted: msg } : undefined)
+          }
+        } catch (err) {
+          console.error('[Bot] Image processing error:', err)
+          await sock.sendMessage(remoteJid, { text: '❌ Gagal memproses foto. Pastikan fotonya jelas dan coba lagi.' })
+        } finally {
+          activeMessageHandlers -= 1
+        }
+        continue
+      }
+
+      // ── Text commands ──────────────────────────────────────────────
       if (!text || !text.startsWith('/')) continue
 
       const identityJid = msg.key.fromMe

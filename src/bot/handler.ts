@@ -1,6 +1,7 @@
 import fs from 'fs'
 import { parseMessage } from '../parser/regex'
 import { parseWithAI } from '../parser/ai'
+import { parseImage } from '../vision/parser'
 import { appendTransaction } from '../sheets/append'
 import { getOrCreateUserSpreadsheet } from '../sheets/userRegistry'
 import { handleCommand } from './commands'
@@ -68,6 +69,37 @@ export type HandlerResult = {
   document?: Buffer
   documentFileName?: string
   documentMimetype?: string
+}
+
+export async function handleImageTransaction(
+  imageBuffer: Buffer,
+  mimeType: string,
+  jid: string,
+  caption?: string
+): Promise<HandlerResult> {
+  const result = await parseImage(imageBuffer, mimeType, caption)
+
+  if (!result.success || !result.transaction) {
+    return { text: '❌ Tidak terdeteksi sebagai nota/struk. Pastikan foto nota jelas dan terbaca.' }
+  }
+
+  const tx = buildTransaction(result.transaction)
+  const sheet = await getOrCreateUserSpreadsheet(jid)
+  await appendTransaction(tx, sheet.record.spreadsheetId)
+
+  const emoji = tx.tipe === 'Pemasukan' ? '✅' : '💸'
+  const label = tx.tipe === 'Pemasukan' ? 'Pemasukan' : 'Pengeluaran'
+
+  return {
+    text: [
+      `${emoji} *${label} dari foto dicatat!*`,
+      `💰 ${formatRp(tx.nominal)}`,
+      `🏷️ ${tx.kategori}`,
+      `📝 ${tx.deskripsi}`,
+      ...(sheet.created ? ['', `📊 Spreadsheet cashflow kamu dibuat: ${sheet.record.spreadsheetUrl}`] : []),
+      ...(sheet.fallback ? ['', `⚠️ Spreadsheet pribadi belum bisa dibuat otomatis, sementara dicatat ke spreadsheet default: ${sheet.record.spreadsheetUrl}`] : []),
+    ].join('\n'),
+  }
 }
 
 export async function handleMessage(text: string, jid: string): Promise<HandlerResult> {
