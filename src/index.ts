@@ -130,15 +130,17 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
       const text = getMessageText(msg)
       const isImage = !!msg.message?.imageMessage
 
-      // ── Image-based transaction (photo of receipt/note) ────────────
-      if (isImage && !text.startsWith('/')) {
+      // ── Image with /keluar or /masuk command ──────────────────────
+      if (isImage && (text === '/keluar' || text === '/masuk' || text.startsWith('/keluar ') || text.startsWith('/masuk '))) {
         const identityJid = msg.key.fromMe
           ? ownerJid
           : getPhoneJidFromMessage(msg) || remoteJid
         const phoneNumber = getPhoneNumberFromJid(identityJid)
         if (!phoneNumber || !ALLOWED_PHONES.has(phoneNumber)) continue
 
-        console.log(`[Bot] image from=${remoteJid} identity=${identityJid} caption="${text}"`)
+        const tipe = text.startsWith('/masuk') ? 'Pemasukan' : 'Pengeluaran'
+        const desc = text.slice(text.indexOf(' ') + 1).trim() || undefined
+        console.log(`[Bot] image cmd=${text} tipe=${tipe} desc=${desc || '-'} from=${remoteJid}`)
 
         activeMessageHandlers += 1
         try {
@@ -153,7 +155,7 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
             continue
           }
           const mimeType = msg.message?.imageMessage?.mimetype || 'image/jpeg'
-          const result = await handleImageTransaction(imageBuffer, mimeType, identityJid, text || undefined)
+          const result = await handleImageTransaction(imageBuffer, mimeType, identityJid, tipe, desc)
           if (!result.text && !result.document) continue
           const isGroup = remoteJid.endsWith('@g.us')
 
@@ -169,7 +171,7 @@ async function connectToWhatsApp(): Promise<ReturnType<typeof makeWASocket>> {
           }
         } catch (err) {
           console.error('[Bot] Image processing error:', err)
-          await sock.sendMessage(remoteJid, { text: '❌ Gagal memproses foto. Pastikan fotonya jelas dan coba lagi.' })
+          await sock.sendMessage(remoteJid, { text: '❌ Gagal memproses foto. Coba lagi.' })
         } finally {
           activeMessageHandlers -= 1
         }

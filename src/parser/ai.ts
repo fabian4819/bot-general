@@ -14,9 +14,16 @@ function getClient(): OpenAI {
   return client
 }
 
-const SYSTEM_PROMPT = `Kamu adalah parser transaksi keuangan. Ekstrak informasi dari pesan bahasa Indonesia.
+function buildPrompt(tipeHint?: string): string {
+  const tipeRule = tipeHint
+    ? `TIPE SUDAH DITENTUKAN: "${tipeHint}". Gunakan ini, jangan tentukan sendiri.`
+    : 'Tentukan tipe dari konteks pesan (Pemasukan atau Pengeluaran).'
 
-Pesan bisa berupa teks biasa atau hasil scan OCR (kotor). Abaikan karakter aneh, fokus ke nominal uang dan kategori transaksi.
+  return `Kamu adalah parser transaksi keuangan. Ekstrak informasi dari pesan bahasa Indonesia.
+
+Pesan bisa berupa teks biasa atau hasil scan OCR struk belanja (kotor). Jika ini struk belanja, cari TOTAL BELANJA (nilai terbesar, biasanya di baris terakhir).
+
+${tipeRule}
 
 Balas HANYA dengan JSON valid, tanpa komentar, tanpa markdown:
 {
@@ -31,13 +38,15 @@ Kategori Pengeluaran: Makanan, Transport, Belanja, Utilitas, Kesehatan, Hiburan,
 
 Jika bukan transaksi keuangan, balas: {"error": "bukan transaksi"}`
 
-export async function parseWithAI(text: string): Promise<ParseResult> {
+}
+
+export async function parseWithAI(text: string, tipeHint?: string): Promise<ParseResult> {
   try {
     const response = await getClient().chat.completions.create({
       model: 'deepseek-chat',
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildPrompt(tipeHint) },
         { role: 'user', content: text.slice(0, 3000) },
       ],
       temperature: 0,

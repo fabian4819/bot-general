@@ -1,7 +1,6 @@
 import Tesseract from 'tesseract.js'
 import { parseWithAI } from '../parser/ai'
-import { parseMessage } from '../parser/regex'
-import { ParseResult } from '../types'
+import { ParseResult, TransactionType } from '../types'
 
 function cleanOcrText(raw: string): string {
   const lines = raw.split('\n')
@@ -18,7 +17,8 @@ function cleanOcrText(raw: string): string {
 export async function parseImage(
   imageBuffer: Buffer,
   mimeType: string,
-  caption?: string
+  tipe?: TransactionType,
+  description?: string
 ): Promise<ParseResult> {
   try {
     console.log('[Vision] Running OCR with Tesseract...')
@@ -38,16 +38,11 @@ export async function parseImage(
       return { success: false, error: 'Tidak ada teks terbaca dari gambar.' }
     }
 
-    const combined = [caption, cleaned].filter(Boolean).join('\n')
+    const desc = description || ''
+    const combined = [desc, cleaned].filter(Boolean).join('\n')
 
-    const regexResult = parseMessage(combined)
-    if (regexResult.success && regexResult.transaction) {
-      console.log('[Vision] Regex parser succeeded')
-      return regexResult
-    }
-
-    console.log('[Vision] Regex failed, trying DeepSeek AI...')
-    const aiResult = await parseWithAI(combined)
+    console.log('[Vision] Parsing with DeepSeek AI...')
+    const aiResult = await parseWithAI(combined, tipe)
     if (aiResult.success) {
       console.log('[Vision] DeepSeek AI parser succeeded')
     }

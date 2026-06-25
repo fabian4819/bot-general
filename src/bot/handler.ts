@@ -6,7 +6,7 @@ import { appendTransaction } from '../sheets/append'
 import { getOrCreateUserSpreadsheet } from '../sheets/userRegistry'
 import { handleCommand } from './commands'
 import { invoiceHelp, parseAndGenerateInvoice } from '../invoice/wizard'
-import { Transaction } from '../types'
+import { Transaction, TransactionType } from '../types'
 
 function formatRp(amount: number): string {
   return `Rp ${amount.toLocaleString('id-ID')}`
@@ -75,9 +75,10 @@ export async function handleImageTransaction(
   imageBuffer: Buffer,
   mimeType: string,
   jid: string,
-  caption?: string
+  tipe?: TransactionType,
+  description?: string
 ): Promise<HandlerResult> {
-  const result = await parseImage(imageBuffer, mimeType, caption)
+  const result = await parseImage(imageBuffer, mimeType, tipe, description)
 
   if (!result.success || !result.transaction) {
     return { text: '❌ Tidak terdeteksi sebagai nota/struk. Pastikan foto nota jelas dan terbaca.' }
