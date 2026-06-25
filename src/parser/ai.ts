@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import { ParseResult } from '../types'
+import { ParseResult, TransactionType } from '../types'
 
 let client: OpenAI | null = null
 
@@ -75,9 +75,9 @@ export async function parseWithAI(text: string, tipeHint?: string): Promise<Pars
     return {
       success: true,
       transaction: {
-        tipe: parsed.tipe,
+        tipe: (tipeHint || parsed.tipe) as TransactionType,
         kategori: parsed.kategori || 'Lainnya',
-        deskripsi: text.trim().slice(0, 200),
+        deskripsi: (parsed.deskripsi || text).trim().slice(0, 200),
         nominal: Number(parsed.nominal),
       },
     }
