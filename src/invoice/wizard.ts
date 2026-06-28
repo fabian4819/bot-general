@@ -31,11 +31,28 @@ function parseRateInput(text: string): number | null {
   return null
 }
 
+function parseDiscountInput(text: string, subtotal: number): number | null {
+  const lower = text.toLowerCase().replace(/[,\s]/g, '')
+  if (lower === '0' || lower === 'none' || lower === 'no' || lower === '-') return 0
+
+  const percent = lower.match(/^(\d+(?:\.\d+)?)(%|persen|percent)$/)
+  if (percent) {
+    const value = parseFloat(percent[1])
+    if (value < 0 || value > 100) return null
+    return Math.round(subtotal * value / 100)
+  }
+
+  const amount = parseRateInput(text)
+  if (amount === null || amount < 0 || amount > subtotal) return null
+  return amount
+}
+
 const SECTION_PREFIXES = [
   /^bill\s+to\s*:/i,
   /^client\s*:/i,
   /^campaign\s*:/i,
   /^brand\s*:/i,
+  /^discount\s*:/i,
   /^item\s*:/i,
 ] as const
 
@@ -58,6 +75,7 @@ export function invoiceHelp(): string {
     `Campaign: [nama campaign]`,
     `Item: [nama] | [deskripsi] | [qty/-] | [rate]`,
     `Item: [nama 2] | [deskripsi] | [qty/-] | [rate]`,
+    `Discount: [10% / 150rb]  (opsional)`,
     ``,
     `Brand: [nama brand]  (opsional)`,
     ``,
@@ -73,13 +91,15 @@ export function invoiceHelp(): string {
     `Brand: Nike`,
     `Item: Pigeon Nano | 1x VT + IG Reels | 17 | 150rb`,
     `Item: Pigeon Micro | 1x VT + IG Reels | - | 150rb`,
+    `Discount: 10%`,
     ``,
     `Mastersheet`,
     `https://docs.google.com/spreadsheets/d/xxxxxxxx/edit`,
     `\`\`\``,
     ``,
-    `Section yang tersedia: \`Bill To:\`, \`Campaign:\`, \`Brand:\`, \`Item:\``,
+    `Section yang tersedia: \`Bill To:\`, \`Campaign:\`, \`Brand:\`, \`Discount:\`, \`Item:\``,
     `Gunakan \`-\` untuk qty bila tidak perlu jumlah.`,
+    `Discount bisa persentase atau nominal: \`10%\`, \`150rb\`, \`1.5jt\`.`,
     `Due date otomatis *${formatDate(addDays(now, 7), tz)}*`,
   ].join('\n')
 }
@@ -118,6 +138,7 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
   let billTo: string | undefined
   let campaign: string | undefined
   let brandName: string | undefined
+  let discountInput: string | undefined
   const itemLines: string[] = []
 
   // Parse Mastersheet separately (keyword line + URL on next line)
@@ -146,6 +167,8 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
       campaign = line.replace(/^campaign\s*:\s*/i, '').trim()
     } else if (/^brand\s*:/i.test(line)) {
       brandName = line.replace(/^brand\s*:\s*/i, '').trim()
+    } else if (/^discount\s*:/i.test(line)) {
+      discountInput = line.replace(/^discount\s*:\s*/i, '').trim()
     } else if (/^item\s*:/i.test(line)) {
       itemLines.push(line)
     } else if (!isSectionLine(line)) {
@@ -191,6 +214,16 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
   const tz = process.env.TIMEZONE || 'Asia/Jakarta'
   const now = new Date()
 
+  const subtotal = items.reduce((s, i) => s + (i.qty ?? 1) * i.rate, 0)
+  let discount = 0
+  if (discountInput) {
+    const parsedDiscount = parseDiscountInput(discountInput, subtotal)
+    if (parsedDiscount === null) {
+      return { reply: `❌ Discount tidak valid: "${discountInput}"\nContoh: 10%, 150rb, 1.5jt. Discount tidak boleh melebihi subtotal.` }
+    }
+    discount = parsedDiscount
+  }
+
   const invoiceNo = nextInvoiceNumber()
   const data: InvoiceData = {
     invoiceNo,
@@ -200,10 +233,11 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
     campaign,
     brandName,
     mastersheetUrl,
+    discount,
     items,
   }
 
-  const total = items.reduce((s, i) => s + (i.qty ?? 1) * i.rate, 0)
+  const total = subtotal - discount
   const summary = items
     .map(i => {
       const qtyStr = i.qty !== null ? String(i.qty) : '-'
@@ -226,6 +260,7 @@ export async function parseAndGenerateInvoice(body: string, source?: string): Pr
       `📋 *${campaign}*`,
       `👤 ${billTo}`,
       summary,
+      ...(discount > 0 ? [`Subtotal: Rp${subtotal.toLocaleString('id-ID')}`, `🏷️ Discount: -Rp${discount.toLocaleString('id-ID')}`] : []),
       `💰 Total: *Rp${total.toLocaleString('id-ID')}*`,
     ]
     if (driveUrl) {

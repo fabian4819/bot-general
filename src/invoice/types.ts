@@ -13,6 +13,7 @@ export interface InvoiceData {
   campaign: string
   brandName?: string
   mastersheetUrl?: string
+  discount?: number
   items: InvoiceItem[]
 }
 

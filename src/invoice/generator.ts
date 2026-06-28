@@ -72,8 +72,10 @@ function addFooter(lines: string[], pageTop: number): void {
   lines.push(`<text x="${CONTENT_RIGHT}" y="${footerTextY}" font-size="22" font-weight="bold" fill="${BRAND_BLUE}" text-anchor="end">@azerakol.id</text>`)
 }
 
-function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: number } {
+function buildSvg(data: InvoiceData, subtotal: number, discount: number, total: number): { svg: string; svgHeight: number } {
   const lines: string[] = []
+  const hasDiscount = discount > 0
+  const cardH = hasDiscount ? 250 : CARD_H
 
   // Dynamic Y anchors
   const lastItemDescY = TABLE_BODY_Y + (data.items.length - 1) * ITEM_ROW_H + 67
@@ -81,12 +83,12 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
 
   const naturalNotesTop = itemsBottom + 40
   const pageContentBottom = PAGE_H - FOOTER_H - 36
-  const notesFitsFirstPage = naturalNotesTop + CARD_H <= pageContentBottom
-  const naturalTermsBottom = naturalNotesTop + CARD_H + 45 + 185
+  const notesFitsFirstPage = naturalNotesTop + cardH <= pageContentBottom
+  const naturalTermsBottom = naturalNotesTop + cardH + 45 + 185
   const singlePageFits = naturalTermsBottom <= pageContentBottom
 
   const notesTop    = singlePageFits || notesFitsFirstPage ? naturalNotesTop : PAGE_H + 90
-  const notesBottom = notesTop + CARD_H
+  const notesBottom = notesTop + cardH
 
   let termsTop: number
   if (singlePageFits || notesTop >= PAGE_H) {
@@ -149,7 +151,7 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
   lines.push(`<rect x="${TABLE_X}" y="${TABLE_HEADER_Y}" width="${TABLE_W}" height="${tableTotalH}" rx="10" fill="none" stroke="#D8D8D8" stroke-width="1.2"/>`)
 
   // Notes card
-  lines.push(`<rect x="${NOTES_X}" y="${notesTop}" width="${NOTES_W}" height="${CARD_H}" rx="14" fill="#F5F3FF" stroke="#DDD8FE" stroke-width="1.5"/>`)
+  lines.push(`<rect x="${NOTES_X}" y="${notesTop}" width="${NOTES_W}" height="${cardH}" rx="14" fill="#F5F3FF" stroke="#DDD8FE" stroke-width="1.5"/>`)
   lines.push(`<text x="${NOTES_X + 28}" y="${notesTop + 52}" font-size="24" font-weight="bold" fill="#6B46C1">NOTES</text>`)
   lines.push(`<text x="${NOTES_X + 28}" y="${notesTop + 113}" font-size="19" fill="#555">Price includes applicable tax and administrative</text>`)
   lines.push(`<text x="${NOTES_X + 28}" y="${notesTop + 142}" font-size="19" fill="#555">costs. Please send proof of payment after transfer.</text>`)
@@ -158,15 +160,21 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
   const RCX  = RIGHT_CARD_X     // label left edge
   const RCX2 = RIGHT_CARD_X + RIGHT_CARD_W  // right edge (text-anchor=end)
 
-  lines.push(`<rect x="${RIGHT_CARD_X}" y="${notesTop}" width="${RIGHT_CARD_W}" height="${CARD_H}" rx="14" fill="white" stroke="#E8E4FF" stroke-width="1.5"/>`)
+  lines.push(`<rect x="${RIGHT_CARD_X}" y="${notesTop}" width="${RIGHT_CARD_W}" height="${cardH}" rx="14" fill="white" stroke="#E8E4FF" stroke-width="1.5"/>`)
 
   const subY   = notesTop + 52
-  const taxY   = subY + 54
+  const discountY = subY + 45
+  const taxY   = hasDiscount ? discountY + 45 : subY + 54
   const divY   = taxY + 24
   const totalY = divY + 57
 
   lines.push(`<text x="${RCX + 28}" y="${subY}" font-size="21" fill="#888">Subtotal</text>`)
-  lines.push(`<text x="${RCX2 - 20}" y="${subY}" font-size="21" fill="#333" text-anchor="end">${formatRp(total)}</text>`)
+  lines.push(`<text x="${RCX2 - 20}" y="${subY}" font-size="21" fill="#333" text-anchor="end">${formatRp(subtotal)}</text>`)
+
+  if (hasDiscount) {
+    lines.push(`<text x="${RCX + 28}" y="${discountY}" font-size="21" fill="#888">Discount</text>`)
+    lines.push(`<text x="${RCX2 - 20}" y="${discountY}" font-size="21" font-weight="bold" fill="#DC2626" text-anchor="end">-${formatRp(discount)}</text>`)
+  }
 
   lines.push(`<text x="${RCX + 28}" y="${taxY}" font-size="21" fill="#888">Tax</text>`)
   lines.push(`<text x="${RCX2 - 20}" y="${taxY}" font-size="21" font-weight="bold" fill="#6B46C1" text-anchor="end">Included</text>`)
@@ -220,8 +228,10 @@ function buildSvg(data: InvoiceData, total: number): { svg: string; svgHeight: n
 export async function generateInvoice(data: InvoiceData): Promise<{ localPath: string; driveUrl: string | null }> {
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true })
 
-  const total = data.items.reduce((sum, i) => sum + (i.qty ?? 1) * i.rate, 0)
-  const { svg, svgHeight } = buildSvg(data, total)
+  const subtotal = data.items.reduce((sum, i) => sum + (i.qty ?? 1) * i.rate, 0)
+  const discount = Math.min(data.discount ?? 0, subtotal)
+  const total = subtotal - discount
+  const { svg, svgHeight } = buildSvg(data, subtotal, discount, total)
   const renderW = PAGE_W * RENDER_SCALE
   const renderH = svgHeight * RENDER_SCALE
   const renderPageH = PAGE_H * RENDER_SCALE
